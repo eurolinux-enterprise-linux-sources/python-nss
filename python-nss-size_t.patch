@@ -1,0 +1,138 @@
+diff -r -u python-nss-0.13.orig/src/py_nss.c python-nss-0.13/src/py_nss.c
+--- python-nss-0.13.orig/src/py_nss.c	2012-10-08 09:50:58.000000000 -0400
++++ python-nss-0.13/src/py_nss.c	2013-01-04 09:58:56.179740003 -0500
+@@ -816,7 +816,7 @@
+         tuple_len = PyTuple_Size(py_line_fmt_tuple);
+
+         if (tuple_len < 1 || tuple_len > 3) {
+-            PyErr_Format(PyExc_TypeError, "line_fmt_tuples[%zd] tuple must have 1-3 items, not %d items",
++            PyErr_Format(PyExc_TypeError, "line_fmt_tuples[%zd] tuple must have 1-3 items, not %zd items",
+                          i, tuple_len);
+             goto fail;
+         }
+@@ -3092,7 +3092,7 @@
+         case 'f': octet = 0xf << 4; break;
+         default:
+             PyMem_Free(data);
+-            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %d \"%s\"",
++            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %ld \"%s\"",
+                          src - input, src);
+             return NULL;
+         }
+@@ -3115,7 +3115,7 @@
+         case 'f': octet |= 0xf; break;
+         default:
+             PyMem_Free(data);
+-            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %d \"%s\"",
++            PyErr_Format(PyExc_ValueError, "invalid hexadecimal string beginning at offset %ld \"%s\"",
+                          src - input, src);
+             return NULL;
+         }
+@@ -4802,7 +4802,7 @@
+         self->item.type = type;
+         self->item.len = buffer_len;
+         if ((self->item.data = PyMem_MALLOC(buffer_len)) == NULL) {
+-            PyErr_Format(PyExc_MemoryError, "not enough memory to copy buffer of size %d into SecItem",
++            PyErr_Format(PyExc_MemoryError, "not enough memory to copy buffer of size %zd into SecItem",
+                          buffer_len);
+             return -1;
+         }
+@@ -7894,14 +7894,14 @@
+             goto fail;
+         }
+         len = PyObject_Size(obj);
+-        if ((obj1 = PyString_FromFormat("CRL Distribution Points: [%d total]", len)) == NULL) {
++        if ((obj1 = PyString_FromFormat("CRL Distribution Points: [%zd total]", len)) == NULL) {
+             goto fail;
+         }
+         FMT_OBJ_AND_APPEND(lines, NULL, obj1, level, fail);
+         Py_CLEAR(obj1);
+
+         for (i = 0; i < len; i++) {
+-            if ((obj1 = PyString_FromFormat("Point [%d]:", i+1)) == NULL) {
++            if ((obj1 = PyString_FromFormat("Point [%zd]:", i+1)) == NULL) {
+                 goto fail;
+             }
+             FMT_OBJ_AND_APPEND(lines, NULL, obj1, level+1, fail);
+@@ -8903,7 +8903,7 @@
+     }
+
+     len = PyTuple_Size(extensions);
+-    if ((obj = PyString_FromFormat("Signed Extensions: (%d)", len)) == NULL) {
++    if ((obj = PyString_FromFormat("Signed Extensions: (%zd)", len)) == NULL) {
+         goto fail;
+     }
+     FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
+@@ -10266,7 +10266,7 @@
+         }
+         sequence_len = PySequence_Length(sequence);
+         if (sequence_len > MAX_AVAS) {
+-            PyErr_Format(PyExc_ValueError, "to many AVA items, maximum is %d, received %d",
++            PyErr_Format(PyExc_ValueError, "to many AVA items, maximum is %d, received %zd",
+                          MAX_AVAS-1, sequence_len);
+             return -1;
+         }
+@@ -10281,7 +10281,7 @@
+                 }
+                 Py_DECREF(item);
+             } else {
+-                PyErr_Format(PyExc_TypeError, "item %d must be an AVA object, not %.200s",
++                PyErr_Format(PyExc_TypeError, "item %zd must be an AVA object, not %.200s",
+                              i, Py_TYPE(item)->tp_name);
+                 Py_DECREF(item);
+                 return -1;
+@@ -11038,7 +11038,7 @@
+         sequence_len = PySequence_Length(sequence);
+
+         if (sequence_len > MAX_RDNS) {
+-            PyErr_Format(PyExc_ValueError, "to many RDN items, maximum is %d, received %d",
++            PyErr_Format(PyExc_ValueError, "to many RDN items, maximum is %d, received %zd",
+                          MAX_RDNS-1, sequence_len);
+             return -1;
+         }
+@@ -11061,7 +11061,7 @@
+                 }
+                 rdn_arg[i] = new_rdn;
+             } else {
+-                PyErr_Format(PyExc_TypeError, "item %d must be an RDN object, not %.200s",
++                PyErr_Format(PyExc_TypeError, "item %zd must be an RDN object, not %.200s",
+                              i, Py_TYPE(item)->tp_name);
+                 Py_DECREF(item);
+                 return -1;
+@@ -13470,7 +13470,7 @@
+         }
+         len = PyTuple_GET_SIZE(obj);
+
+-        if ((obj1 = PyString_FromFormat("General Names: [%d total]", len)) == NULL) {
++        if ((obj1 = PyString_FromFormat("General Names: [%zd total]", len)) == NULL) {
+             goto fail;
+         }
+         FMT_OBJ_AND_APPEND(lines, NULL, obj1, level, fail);
+@@ -14173,7 +14173,7 @@
+         goto fail;
+     }
+     len = PyObject_Size(obj);
+-    if ((obj1 = PyString_FromFormat("General Names: [%d total]", len)) == NULL) {
++    if ((obj1 = PyString_FromFormat("General Names: [%zd total]", len)) == NULL) {
+         goto fail;
+     }
+     FMT_OBJ_AND_APPEND(lines, NULL, obj1, level, fail);
+@@ -14866,7 +14866,7 @@
+     }
+
+     len = PyTuple_Size(extensions);
+-    if ((obj = PyString_FromFormat("Signed Extensions: (%d)", len)) == NULL) {
++    if ((obj = PyString_FromFormat("Signed Extensions: (%zd)", len)) == NULL) {
+         goto fail;
+     }
+     FMT_OBJ_AND_APPEND(lines, NULL, obj, level+1, fail);
+@@ -19993,7 +19993,7 @@
+                              "cert_cipher", "pin_args", NULL};
+     char *utf8_nickname = NULL;
+     char *utf8_pkcs12_password = NULL;
+-    int utf8_pkcs12_password_len = 0;
++    Py_ssize_t utf8_pkcs12_password_len = 0;
+     unsigned int key_cipher = SEC_OID_UNKNOWN;
+     unsigned int cert_cipher = SEC_OID_UNKNOWN;
+     PyObject *pin_args = Py_None;
+Only in python-nss-0.13/src: py_nss.c~

@@ -1,39 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is a Python binding for Network Security Services (NSS).
- *
- * The Initial Developer of the Original Code is Red Hat, Inc.
- *   (Author: John Dennis <jdennis@redhat.com>)
- *
- * Portions created by the Initial Developer are Copyright (C) 2008,2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above.  If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 #define PY_SSIZE_T_CLEAN
 #include "Python.h"
@@ -140,10 +107,11 @@ set_nspr_error(const char *format, ...)
     va_list vargs;
     PyObject *v;
     const NSPRErrorDesc *error_desc;
-    char *errstr=NULL;
-    PRErrorCode err;
+    char *pr_err_msg=NULL;
+    PRInt32 pr_err_msg_len;
+    PRErrorCode error_code;
     PyObject *detail = NULL;
-    char buf[1024];
+    char *final_err_msg=NULL;
 
     if (format) {
 #ifdef HAVE_STDARG_PROTOTYPES
@@ -155,28 +123,39 @@ set_nspr_error(const char *format, ...)
 	va_end(vargs);
     }
 
-    err = PR_GetError();
-    PR_GetErrorText(errstr);
-    if (errstr == NULL) {
-        if ((error_desc = lookup_nspr_error(err)) != NULL) {
-            snprintf(buf, sizeof(buf), "(%s) %s", error_desc->name, error_desc->string);
-            errstr = buf;
-        } else {
-            errstr = NULL;
-        }
+    error_code = PR_GetError();
+    error_desc = lookup_nspr_error(error_code);
 
+    if ((pr_err_msg_len = PR_GetErrorTextLength())) {
+        if ((pr_err_msg = PyMem_Malloc(pr_err_msg_len + 1))) {
+            PR_GetErrorText(pr_err_msg);
+        }
+    }
+
+    if (pr_err_msg && error_desc) {
+        final_err_msg = PR_smprintf("%s (%s) %s", pr_err_msg, error_desc->name, error_desc->string);
+    } else if (error_desc) {
+        final_err_msg = PR_smprintf("(%s) %s", error_desc->name, error_desc->string);
+    } else if (pr_err_msg) {
+        final_err_msg = PR_smprintf("%s", pr_err_msg);
+    } else {
+        final_err_msg = PR_smprintf("error (%d) unknown", error_code);
     }
 
     if (detail) {
-        v = Py_BuildValue("(isS)", err, errstr, detail);
+        v = Py_BuildValue("(isS)", error_code, final_err_msg, detail);
 	Py_DECREF(detail);
     } else {
-        v = Py_BuildValue("(is)", err, errstr);
+        v = Py_BuildValue("(is)", error_code, final_err_msg);
     }
     if (v != NULL) {
         PyErr_SetObject(NSPR_Exception, v);
         Py_DECREF(v);
     }
+
+    if (final_err_msg) PR_smprintf_free(final_err_msg);
+    if (pr_err_msg) PyMem_Free(pr_err_msg);
+
     return NULL;
 }
 

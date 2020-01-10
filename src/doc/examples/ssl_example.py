@@ -1,41 +1,11 @@
 #!/usr/bin/python
 
-# ***** BEGIN LICENSE BLOCK *****
-# Version: MPL 1.1/GPL 2.0/LGPL 2.1
-#
-# The contents of this file are subject to the Mozilla Public License Version
-# 1.1 (the "License"); you may not use this file except in compliance with
-# the License. You may obtain a copy of the License at
-# http://www.mozilla.org/MPL/
-#
-# Software distributed under the License is distributed on an "AS IS" basis,
-# WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
-# for the specific language governing rights and limitations under the
-# License.
-#
-# The Original Code is a Python binding for Network Security Services (NSS).
-#
-# The Initial Developer of the Original Code is Red Hat, Inc.
-#   (Author: John Dennis <jdennis@redhat.com>)
-#
-# Portions created by the Initial Developer are Copyright (C) 2008,2009
-# the Initial Developer. All Rights Reserved.
-#
-# Contributor(s):
-#
-# Alternatively, the contents of this file may be used under the terms of
-# either the GNU General Public License Version 2 or later (the "GPL"), or
-# the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
-# in which case the provisions of the GPL or the LGPL are applicable instead
-# of those above.  If you wish to allow use of your version of this file only
-# under the terms of either the GPL or the LGPL, and not to allow others to
-# use your version of this file under the terms of the MPL, indicate your
-# decision by deleting the provisions above and replace them with the notice
-# and other provisions required by the GPL or the LGPL. If you do not delete
-# the provisions above, a recipient may use your version of this file under
-# the terms of any one of the MPL, the GPL or the LGPL.
-#
-# ***** END LICENSE BLOCK *****
+# This Source Code Form is subject to the terms of the Mozilla Public
+# License, v. 2.0. If a copy of the MPL was not distributed with this
+# file, You can obtain one at http://mozilla.org/MPL/2.0/.
+
+import warnings
+warnings.simplefilter( "always", DeprecationWarning)
 
 import os
 import sys
@@ -57,7 +27,7 @@ REQUIRE_CLIENT_CERT_ALWAYS = 4
 # command line parameters, default them to something reasonable
 client = False
 server = False
-password = 'passwd'
+password = 'db_passwd'
 use_ssl = True
 client_cert_action = NO_CLIENT_CERT
 certdir = 'pki'
@@ -190,13 +160,12 @@ def Client():
         net_addr.port = port
 
         if use_ssl:
-            sock = ssl.SSLSocket()
+            sock = ssl.SSLSocket(net_addr.family)
 
             # Set client SSL socket options
             sock.set_ssl_option(ssl.SSL_SECURITY, True)
             sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_CLIENT, True)
             sock.set_hostname(hostname)
-            sock.reset_handshake(False) # FIXME: is this needed
 
             # Provide a callback which notifies us when the SSL handshake is complete
             sock.set_handshake_callback(handshake_callback)
@@ -209,7 +178,7 @@ def Client():
             sock.set_auth_certificate_callback(auth_certificate_callback,
                                                nss.get_default_certdb())
         else:
-            sock = io.Socket()
+            sock = io.Socket(net_addr.family)
 
         try:
             print "client trying connection to: %s" % (net_addr)
@@ -218,22 +187,13 @@ def Client():
             valid_addr = True
             break
         except Exception, e:
+            sock.close()
             print "client connection to: %s failed (%s)" % (net_addr, e)
 
     if not valid_addr:
         print "Could not establish valid address for \"%s\" in family %s" % \
         (hostname, io.addr_family_name(family))
         return
-    try:
-        print "client connected to: %s" % sock.get_peer_name()
-    except Exception, e:
-        print e.strerror
-        try:
-            sock.shutdown()
-        except:
-            pass
-        return
-        
 
     # Talk to the server
     try:
@@ -241,12 +201,13 @@ def Client():
         buf = sock.recv(1024)
         if not buf:
             print "client lost connection"
+            sock.close()
             return
         print "client received: %s" % (buf)
     except Exception, e:
         print e.strerror
         try:
-            sock.shutdown()
+            sock.close()
         except:
             pass
         return
@@ -257,7 +218,13 @@ def Client():
             sock.shutdown()
         except:
             pass
-        return
+
+    try:
+        sock.close()
+        if use_ssl:
+            ssl.clear_session_cache()
+    except Exception, e:
+        print e
 
 # -----------------------------------------------------------------------------
 # Server Implementation
@@ -283,7 +250,7 @@ def Server():
     net_addr = io.NetworkAddress(io.PR_IpAddrAny, port, family)
 
     if use_ssl:
-        sock = ssl.SSLSocket()
+        sock = ssl.SSLSocket(net_addr.family)
 
         # Set server SSL socket options
         sock.set_pkcs11_pin_arg(password)
@@ -299,10 +266,9 @@ def Server():
 
         # Configure the server SSL socket
         sock.config_secure_server(server_cert, priv_key, server_cert_kea)
-        sock.reset_handshake(True) # FIXME: is this needed?
 
     else:
-        sock = io.Socket()
+        sock = io.Socket(net_addr.family)
 
     # Bind to our network address and listen for clients
     sock.bind(net_addr)
@@ -330,6 +296,7 @@ def Server():
                 client_sock.send("Goodbye")
                 try:
                     client_sock.shutdown(io.PR_SHUTDOWN_RCV)
+                    client_sock.close()
                 except:
                     pass
                 break
@@ -340,7 +307,11 @@ def Server():
 
     try:
         sock.shutdown()
-    except:
+        sock.close()
+        if use_ssl:
+            ssl.shutdown_server_session_id_cache()
+    except Exception, e:
+        print e
         pass
 
 # -----------------------------------------------------------------------------
@@ -482,4 +453,9 @@ if client:
 if server:
     print "starting as server"
     Server()
+
+try:
+    nss.nss_shutdown()
+except Exception, e:
+    print e
 

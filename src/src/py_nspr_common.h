@@ -1,39 +1,6 @@
-/* ***** BEGIN LICENSE BLOCK *****
- * Version: MPL 1.1/GPL 2.0/LGPL 2.1
- *
- * The contents of this file are subject to the Mozilla Public License Version
- * 1.1 (the "License"); you may not use this file except in compliance with
- * the License. You may obtain a copy of the License at
- * http://www.mozilla.org/MPL/
- *
- * Software distributed under the License is distributed on an "AS IS" basis,
- * WITHOUT WARRANTY OF ANY KIND, either express or implied. See the License
- * for the specific language governing rights and limitations under the
- * License.
- *
- * The Original Code is a Python binding for Network Security Services (NSS).
- *
- * The Initial Developer of the Original Code is Red Hat, Inc.
- *   (Author: John Dennis <jdennis@redhat.com>)
- *
- * Portions created by the Initial Developer are Copyright (C) 2008,2009
- * the Initial Developer. All Rights Reserved.
- *
- * Contributor(s):
- *
- * Alternatively, the contents of this file may be used under the terms of
- * either the GNU General Public License Version 2 or later (the "GPL"), or
- * the GNU Lesser General Public License Version 2.1 or later (the "LGPL"),
- * in which case the provisions of the GPL or the LGPL are applicable instead
- * of those above.  If you wish to allow use of your version of this file only
- * under the terms of either the GPL or the LGPL, and not to allow others to
- * use your version of this file under the terms of the MPL, indicate your
- * decision by deleting the provisions above and replace them with the notice
- * and other provisions required by the GPL or the LGPL. If you do not delete
- * the provisions above, a recipient may use your version of this file under
- * the terms of any one of the MPL, the GPL or the LGPL.
- *
- * ***** END LICENSE BLOCK ***** */
+/* This Source Code Form is subject to the terms of the Mozilla Public
+ * License, v. 2.0. If a copy of the MPL was not distributed with this
+ * file, You can obtain one at http://mozilla.org/MPL/2.0/. */
 
 //#define DEBUG
 
@@ -46,6 +13,8 @@
 #endif
 
 #define NSS_THREAD_LOCAL_KEY "nss"
+
+#define PyBoolAsPRBool(x) ((x) == Py_True ? PR_TRUE : PR_FALSE)
 
 #define ASSIGN_REF(dst, obj)                    \
 do {                                            \
@@ -97,6 +66,8 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 #define Py_TPFLAGS_HAVE_NEWBUFFER 0
 #endif
 
+#define PyNone_Check(x) ((x) == Py_None)
+
 #define TYPE_READY(type)                                                \
 {                                                                       \
     if (PyType_Ready(&type) < 0)                                        \
@@ -109,8 +80,9 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 
 #ifdef DEBUG
 
-#define DumpRefCount(_obj)                                              \
+#define DumpRefCount(x)                                                 \
 {                                                                       \
+    PyObject *_obj = (PyObject *) (x);                                  \
     printf("<%s object at %p refcnt=%d>\n", Py_TYPE(_obj)->tp_name, _obj, _obj->ob_refcnt); \
 }
 
@@ -120,8 +92,9 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
     printf("%s\n", _msg);                       \
 }
 
-#define TraceMethodEnter(_obj)                                          \
+#define TraceMethodEnter(x)                                             \
 {                                                                       \
+    PyObject *_obj = (PyObject *) (x);                                  \
     const char *name = NULL;                                            \
                                                                         \
     if (_obj) {                                                         \
@@ -131,8 +104,9 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
            __FUNCTION__, name, _obj, _obj ? _obj->ob_refcnt : -9999);   \
 }
 
-#define TraceMethodLeave(_obj)                                          \
+#define TraceMethodLeave(x)                                             \
 {                                                                       \
+    PyObject *_obj = (PyObject *) (x);                                  \
     const char *name = NULL;                                            \
                                                                         \
     if (_obj) {                                                         \
@@ -152,8 +126,9 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 }
 
 
-#define TraceObjNewLeave(_obj)                                          \
+#define TraceObjNewLeave(x)                                             \
 {                                                                       \
+    PyObject *_obj = (PyObject *) (x);                                  \
     const char *name = NULL;                                            \
                                                                         \
     if (_obj) {                                                         \

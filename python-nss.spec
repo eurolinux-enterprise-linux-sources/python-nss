@@ -5,23 +5,23 @@
 %global build_api_doc 1
 
 Name:           python-nss
-Version:        0.11
-Release:        3%{?dist}
+Version:        0.13
+Release:        1%{?dist}
 Summary:        Python bindings for Network Security Services (NSS)
 
 Group:          Development/Languages
-License:        MPLv1.1 or GPLv2+ or LGPLv2+
+License:        MPLv2.0 or GPLv2+ or LGPLv2+
 URL:            ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss
-Source0:        ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss/releases/PYNSS_RELEASE_0_11_0/src/python-nss-%{version}.tar.bz2
+Source0:        ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss/releases/PYNSS_RELEASE_0_13_0/src/python-nss-%{version}.tar.bz2
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
-
-Patch1: python-nss-0.11-family.patch
 
 %global docdir %{_docdir}/%{name}-%{version}
 
+Patch1: python-nss-size_t.patch
+
 # We don't want to provide private python extension libs
 %{?filter_setup:
-%filter_provides_in %{python_sitearch}/.*\.so$ 
+%filter_provides_in %{python_sitearch}/.*\.so$
 %filter_setup
 }
 
@@ -52,7 +52,7 @@ API documentation and examples
 
 %prep
 %setup -q
-%patch1 -p0 -b.family
+%patch1 -p1 -b size_t
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing" %{__python} setup.py build
@@ -94,6 +94,199 @@ rm -rf $RPM_BUILD_ROOT
 %endif
 
 %changelog
+* Fri Jan  4 2013 John Dennis <jdennis@redhat.com> - 0.13-1
+- Resolves: #642795
+  add python-nss-size_t.patch, some types involved with ssize_t were
+  improperly defined causing a segfault on the s390x and ppc64 arches.
+
+* Fri Oct  5 2012 John Dennis <jdennis@redhat.com> - 0.13-0
+- Resolves: #827616
+- Resolves: #642795
+- Resolves: #698663
+- Resolves: #796295
+
+  Introduced in 0.13:
+
+  * Fix NSS SECITEM_CompareItem bug via workaround.
+
+  * Fix incorrect format strings in PyArg_ParseTuple* for:
+    - GeneralName
+    - BasicConstraints
+    - cert_x509_key_usage
+
+  * Fix bug when decoding certificate BasicConstraints extension
+
+  * Fix hang in setup_certs.
+
+  * For NSS >= 3.13 support CERTDB_TERMINAL_RECORD
+
+  * You can now query for a specific certificate extension
+    Certficate.get_extension()
+
+  * The following classes were added:
+    - RSAGenParams
+
+  * The following class methods were added:
+    - nss.nss.Certificate.get_extension
+    - nss.nss.PK11Slot.generate_key_pair
+    - nss.nss.DSAPublicKey.format
+    - nss.nss.DSAPublicKey.format_lines
+
+  * The following module functions were added:
+    - nss.nss.pub_wrap_sym_key
+
+  * The following internal utilities were added:
+    - PyString_UTF8
+    - SecItem_new_alloc()
+
+  * The following class constructors were modified to accept
+    intialization parameters
+
+    - KEYPQGParams (DSA generation parameters)
+
+  * The PublicKey formatting (i.e. format_lines) was augmented
+    to format DSA keys (formerly it only recognized RSA keys).
+
+  * Allow lables and values to be justified when printing objects
+
+  * The following were deprecated:
+    - nss.nss.make_line_pairs (replaced by nss.nss.make_line_fmt_tuples)
+
+    Deprecated Functionality:
+    -------------------------
+    - make_line_pairs() has been replaced by make_line_fmt_tuples()
+      because 2-valued tuples were not sufficently general. It is
+      expected very few programs will have used this function, it's mostly
+      used internally but provided as a support utility.
+
+  Introduced in 0.12:
+
+  * Major new enhancement is additon of PKCS12 support and
+    AlgorithmID's.
+
+  * setup.py build enhancements
+    - Now searches for the NSS and NSPR header files rather
+      than hardcoding their location. This makes building friendlier
+      on other systems (i.e. debian)
+    - Now takes optional command line arguments, -d or --debug
+      will turn on debug options during the build.
+
+  * Fix reference counting bug in PK11_password_callback() which
+    contributed to NSS not being able to shutdown due to
+    resources still in use.
+
+  * Add UTF-8 support to ssl.config_server_session_id_cache()
+
+  * Added unit tests for cipher, digest, client_server.
+
+  * All unittests now run, added test/run_tests to invoke
+    full test suite.
+
+  * Fix bug in test/setup_certs.py, hardcoded full path to
+    libnssckbi.so was causing failures on 64-bit systems,
+    just use the libnssckbi.so basename, modutil will find
+    it on the standard search path.
+
+  * doc/examples/cert_dump.py uses new AlgorithmID class to
+    dump Signature Algorithm
+
+  * doc/examples/ssl_example.py now can cleanly shutdown NSS.
+
+  * Exception error messages now include PR error text if available.
+
+  * The following classes were replaced:
+    - SignatureAlgorithm replaced by new class AlgorithmID
+
+  * The following classes were added:
+    - AlgorithmID
+    - PKCS12DecodeItem
+    - PKCS12Decoder
+
+  * The following class methods were added:
+    - PK11Slot.authenticate()
+    - PK11Slot.get_disabled_reason()
+    - PK11Slot.has_protected_authentication_path()
+    - PK11Slot.has_root_certs()
+    - PK11Slot.is_disabled()
+    - PK11Slot.is_friendly()
+    - PK11Slot.is_internal()
+    - PK11Slot.is_logged_in()
+    - PK11Slot.is_removable()
+    - PK11Slot.logout()
+    - PK11Slot.need_login()
+    - PK11Slot.need_user_init()
+    - PK11Slot.user_disable()
+    - PK11Slot.user_enable()
+    - PKCS12DecodeItem.format()
+    - PKCS12DecodeItem.format_lines()
+    - PKCS12Decoder.database_import()
+    - PKCS12Decoder.format()
+    - PKCS12Decoder.format_lines()
+
+  * The following class properties were added:
+    - AlgorithmID.id_oid
+    - AlgorithmID.id_str
+    - AlgorithmID.id_tag
+    - AlgorithmID.parameters
+    - PKCS12DecodeItem.certificate
+    - PKCS12DecodeItem.friendly_name
+    - PKCS12DecodeItem.has_key
+    - PKCS12DecodeItem.shroud_algorithm_id
+    - PKCS12DecodeItem.signed_cert_der
+    - PKCS12DecodeItem.type
+    - SignedData.data
+    - SignedData.der
+
+  * The following module functions were added:
+    - nss.nss.dump_certificate_cache_info()
+    - nss.nss.find_slot_by_name()
+    - nss.nss.fingerprint_format_lines()
+    - nss.nss.get_internal_slot()
+    - nss.nss.is_fips()
+    - nss.nss.need_pw_init()
+    - nss.nss.nss_init_read_write()
+    - nss.nss.pk11_disabled_reason_name()
+    - nss.nss.pk11_disabled_reason_str()
+    - nss.nss.pk11_logout_all()
+    - nss.nss.pkcs12_cipher_from_name()
+    - nss.nss.pkcs12_cipher_name()
+    - nss.nss.pkcs12_enable_all_ciphers()
+    - nss.nss.pkcs12_enable_cipher()
+    - nss.nss.pkcs12_export()
+    - nss.nss.pkcs12_map_cipher()
+    - nss.nss.pkcs12_set_nickname_collision_callback()
+    - nss.nss.pkcs12_set_preferred_cipher()
+    - nss.nss.token_exists()
+    - nss.ssl.config_mp_server_sid_cache()
+    - nss.ssl.config_server_session_id_cache_with_opt()
+    - nss.ssl.get_max_server_cache_locks()
+    - nss.ssl.set_max_server_cache_locks()
+    - nss.ssl.shutdown_server_session_id_cache()
+
+  * The following constants were added:
+    - nss.nss.int.PK11_DIS_COULD_NOT_INIT_TOKEN
+    - nss.nss.int.PK11_DIS_NONE
+    - nss.nss.int.PK11_DIS_TOKEN_NOT_PRESENT
+    - nss.nss.int.PK11_DIS_TOKEN_VERIFY_FAILED
+    - nss.nss.int.PK11_DIS_USER_SELECTED
+    - nss.nss.int.PKCS12_DES_56
+    - nss.nss.int.PKCS12_DES_EDE3_168
+    - nss.nss.int.PKCS12_RC2_CBC_128
+    - nss.nss.int.PKCS12_RC2_CBC_40
+    - nss.nss.int.PKCS12_RC4_128
+    - nss.nss.int.PKCS12_RC4_40
+
+  * The following files were added:
+    - test/run_tests
+    - test/test_cipher.py (replaces cipher_test.py)
+    - test/test_client_server.py
+    - test/test_digest.py (replaces digest_test.py)
+    - test/test_pkcs12.py
+
+  * The following were deprecated:
+    - SignatureAlgorithm
+
+
 * Tue Mar 22 2011 John Dennis <jdennis@redhat.com> - 0.11-3
 - Resolves: #689807
   Add family parameter to Socket constructors in examples and doc.
@@ -453,5 +646,3 @@ rm -rf $RPM_BUILD_ROOT
 
 * Fri Jun 27 2008 John Dennis <jdennis@redhat.com> - 0.0-1
 - initial release
-
-
