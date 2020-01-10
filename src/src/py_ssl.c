@@ -45,6 +45,7 @@
 
 #include "py_nspr_common.h"
 #include "py_nspr_io.h"
+#define NSS_SSL_MODULE
 #include "py_ssl.h"
 #include "py_nss.h"
 #include "py_nspr_error.h"
@@ -53,36 +54,20 @@
 
 static PyObject *py_ssl_implemented_ciphers = NULL;
 
-// FIXME: this should be imported from socket module
 static PyObject *
-NetworkAddress_new_from_prnetaddr(PRNetAddr *pr_netaddr)
-{
-    NetworkAddress *self = NULL;
-
-    TraceObjNewEnter("NetworkAddress_new_from_prnetaddr", NULL);
-
-    if ((self = (NetworkAddress *) NetworkAddressType.tp_new(&NetworkAddressType, NULL, NULL)) == NULL)
-        return NULL;
-
-    self->addr = *pr_netaddr;
-
-    TraceObjNewLeave("NetworkAddress_new_from_prnetaddr", self);
-    return (PyObject *) self;
-}
-
-static PyObject *
-SSLSocket_new_from_prfiledesc(PRFileDesc *pr_socket, int family)
+SSLSocket_new_from_PRFileDesc(PRFileDesc *pr_socket, int family)
 {
     SSLSocket *self = NULL;
 
-    TraceObjNewEnter("SSLSocket_new_from_prfiledesc", NULL);
+    TraceObjNewEnter(NULL);
 
-    if ((self = (SSLSocket *) SSLSocketType.tp_new(&SSLSocketType, NULL, NULL)) == NULL)
+    if ((self = (SSLSocket *) SSLSocketType.tp_new(&SSLSocketType, NULL, NULL)) == NULL) {
         return NULL;
+    }
 
-    Socket_init_from_prfiledesc((Socket *)self, pr_socket, family);
+    Socket_init_from_PRFileDesc((Socket *)self, pr_socket, family);
 
-    TraceObjNewLeave("SSLSocket_new_from_prfiledesc", self);
+    TraceObjNewLeave(self);
     return (PyObject *) self;
 }
 
@@ -287,7 +272,7 @@ SSLSocket_set_ssl_option(SSLSocket *self, PyObject *args)
     int option;
     int value;
 
-    TraceMethodEnter("SSLSocket_set_ssl_option", self);
+    TraceMethodEnter(self);
 
     /*
      * Note, although most of the options are booleans, at least one
@@ -323,7 +308,7 @@ SSLSocket_get_ssl_option(SSLSocket *self, PyObject *args)
     int option;
     int value;
 
-    TraceMethodEnter("SSLSocket_get_ssl_option", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "i:get_ssl_option", &option)) {
         return NULL;
@@ -371,36 +356,44 @@ SSLSocket_accept(SSLSocket *self, PyObject *args, PyObject *kwds)
     PRFileDesc *pr_socket = NULL;
     PyObject *return_value = NULL;
 
-    TraceMethodEnter("SSLSocket_accept", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|I:accept", kwlist,
                                      &timeout))
         return NULL;
 
-    if ((pr_socket = PR_Accept(self->pr_socket, &pr_netaddr, timeout)) == NULL)
+    Py_BEGIN_ALLOW_THREADS
+    if ((pr_socket = PR_Accept(self->pr_socket, &pr_netaddr, timeout)) == NULL) {
+        Py_BLOCK_THREADS
         return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
 
-    if ((py_netaddr = NetworkAddress_new_from_prnetaddr(&pr_netaddr)) == NULL)
+    if ((py_netaddr = NetworkAddress_new_from_PRNetAddr(&pr_netaddr)) == NULL) {
         goto error;
+    }
 
-    if ((py_ssl_socket = SSLSocket_new_from_prfiledesc(pr_socket, self->family)) == NULL)
+    if ((py_ssl_socket = SSLSocket_new_from_PRFileDesc(pr_socket, self->family)) == NULL) {
         goto error;
+    }
 
-    if ((return_value = Py_BuildValue("OO", py_ssl_socket, py_netaddr)) == NULL)
+    if ((return_value = Py_BuildValue("NN", py_ssl_socket, py_netaddr)) == NULL) {
         goto error;
+    }
 
     return return_value;
 
  error:
     Py_XDECREF(py_ssl_socket);
     Py_XDECREF(py_netaddr);
-    Py_XDECREF(return_value);
     return NULL;
 }
 
 static SECStatus
 ssl_auth_certificate(void *arg, PRFileDesc *pr_socket, PRBool check_sig, PRBool is_server)
 {
+    PyGILState_STATE gstate;
+    Py_ssize_t n_base_args = 3;
     SSLSocket *self = arg;
     PyObject *py_ssl_socket = NULL;
     PyObject *result = NULL;
@@ -408,43 +401,47 @@ ssl_auth_certificate(void *arg, PRFileDesc *pr_socket, PRBool check_sig, PRBool 
     PyObject *item;
     Py_ssize_t argc;
     int i, j;
-    SECStatus sec_status;
+    SECStatus sec_status = SECFailure;
 
-    argc = 3;
-    if (self->auth_certificate_callback_data)
-        argc += PyTuple_Size(self->auth_certificate_callback_data);
+    gstate = PyGILState_Ensure();
+
+    argc = n_base_args;
+    if (self->py_auth_certificate_callback_data)
+        argc += PyTuple_Size(self->py_auth_certificate_callback_data);
 
     if ((args = PyTuple_New(argc)) == NULL) {
         PySys_WriteStderr("SSLSocket.auth_certificate_func: out of memory\n");
-        return SECFailure;
+	goto exit;
     }
 
-    if ((py_ssl_socket = SSLSocket_new_from_prfiledesc(pr_socket, self->family)) == NULL) { /* FIXME: cached? what is family? */
+    if ((py_ssl_socket = SSLSocket_new_from_PRFileDesc(pr_socket, self->family)) == NULL) { /* FIXME: cached? what is family? */
         PySys_WriteStderr("SSLSocket.auth_certificate_func: cannot create socket object\n");
-        return SECFailure;
+	goto exit;
     }
 
     PyTuple_SetItem(args, 0, py_ssl_socket);
     PyTuple_SetItem(args, 1, PyBool_FromLong(check_sig));
     PyTuple_SetItem(args, 2, PyBool_FromLong(is_server));
 
-    for (i = 3, j = 0; i < argc; i++, j++) {
-        item = PyTuple_GetItem(self->auth_certificate_callback_data, j);
+    for (i = n_base_args, j = 0; i < argc; i++, j++) {
+        item = PyTuple_GetItem(self->py_auth_certificate_callback_data, j);
         Py_INCREF(item);
         PyTuple_SetItem(args, i, item);
     }
 
-    if ((result = PyObject_CallObject(self->auth_certificate_callback, args)) == NULL) {
+    if ((result = PyObject_CallObject(self->py_auth_certificate_callback, args)) == NULL) {
         PySys_WriteStderr("exception in SSLSocket.auth_certificate_func\n");
         PyErr_Print();  /* this also clears the error */
-        Py_DECREF(args);
-        return SECFailure;
+	goto exit;
     }
 
     sec_status = PyObject_IsTrue(result) ? SECSuccess : SECFailure;
 
-    Py_DECREF(args);
+ exit:
+    Py_XDECREF(args);
     Py_XDECREF(result);
+
+    PyGILState_Release(gstate);
 
     return sec_status;
 }
@@ -505,52 +502,66 @@ the certificate authentication callback function.\n\
 Example::\n\
     \n\
     def auth_certificate_callback(sock, check_sig, is_server, certdb):\n\
-        validity = False\n\
-        \n\
+        cert_is_valid = False\n\
+\n\
         cert = sock.get_peer_certificate()\n\
         pin_args = sock.get_pkcs11_pin_arg()\n\
-        \n\
-        # Define how the cert is being used based upon the is_server flag.\n\
-        # This may seem backwards, but isn't.\n\
+        if pin_args is None:\n\
+            pin_args = ()\n\
+\n\
+        # Define how the cert is being used based upon the is_server flag.  This may\n\
+        # seem backwards, but isn't. If we're a server we're trying to validate a\n\
+        # client cert. If we're a client we're trying to validate a server cert.\n\
         if is_server:\n\
-            cert_usage = nss.certificateUsageSSLClient\n\
+            intended_usage = nss.certificateUsageSSLClient\n\
         else:\n\
-            cert_usage = nss.certificateUsageSSLServer\n\
-        \n\
-        valid_usage = cert.verify_now(certdb, check_sig, cert_usage, *pin_args)\n\
-        \n\
-        if valid_usage & cert_usage:\n\
-            validity = True\n\
+            intended_usage = nss.certificateUsageSSLServer\n\
+\n\
+        try:\n\
+            # If the cert fails validation it will raise an exception, the errno attribute\n\
+            # will be set to the error code matching the reason why the validation failed\n\
+            # and the strerror attribute will contain a string describing the reason.\n\
+            approved_usage = cert.verify_now(certdb, check_sig, intended_usage, *pin_args)\n\
+        except Exception, e:\n\
+            cert_is_valid = False\n\
+            return cert_is_valid\n\
+\n\
+        # Is the intended usage a proper subset of the approved usage\n\
+        if approved_usage & intended_usage:\n\
+            cert_is_valid = True\n\
         else:\n\
-            validity = False\n\
-        \n\
+            cert_is_valid = False\n\
+\n\
         # If this is a server, we're finished\n\
-        if is_server or not validity:\n\
-            return validity\n\
-        \n\
+        if is_server or not cert_is_valid:\n\
+            return cert_is_valid\n\
+\n\
         # Certificate is OK.  Since this is the client side of an SSL\n\
         # connection, we need to verify that the name field in the cert\n\
         # matches the desired hostname.  This is our defense against\n\
         # man-in-the-middle attacks.\n\
-        \n\
+\n\
         hostname = sock.get_hostname()\n\
-        validity = cert.verify_hostname(hostname)\n\
-        \n\
-        return validity\n\
-        \n\
-    sock = ssl.SSLSocket()\n\
-    sock.set_auth_certificate_callback(auth_certificate_callback, nss.get_default_certdb())\n\
+        try:\n\
+            # If the cert fails validation it will raise an exception\n\
+            cert_is_valid = cert.verify_hostname(hostname)\n\
+        except Exception, e:\n\
+            cert_is_valid = False\n\
+            return cert_is_valid\n\
+\n\
+        return cert_is_valid\n\
 \n\
 ");
 
 static PyObject *
 SSLSocket_set_auth_certificate_callback(SSLSocket *self, PyObject *args)
 {
+    Py_ssize_t n_base_args = 1;
     Py_ssize_t argc;
     PyObject *callback;
     PyObject *callback_args = NULL;
 
-    TraceMethodEnter("SSLSocket_set_auth_certificate_callback", self);
+    TraceMethodEnter(self);
 
     argc = PyTuple_Size(args);
 
@@ -564,18 +575,14 @@ SSLSocket_set_auth_certificate_callback(SSLSocket *self, PyObject *args)
         return NULL;
     }
 
-    callback_args = PyTuple_GetSlice(args, 1, argc);
+    callback_args = PyTuple_GetSlice(args, n_base_args, argc);
 
-    Py_INCREF(callback);
-    Py_XDECREF(self->auth_certificate_callback);
-    self->auth_certificate_callback = callback;
+    ASSIGN_REF(self->py_auth_certificate_callback, callback);
+    ASSIGN_NEW_REF(self->py_auth_certificate_callback_data, callback_args);
 
-    Py_INCREF(callback_args);
-    Py_XDECREF(self->auth_certificate_callback_data);
-    self->auth_certificate_callback_data = callback_args;
-
-    if (SSL_AuthCertificateHook(self->pr_socket,  ssl_auth_certificate, self) != SECSuccess)
+    if (SSL_AuthCertificateHook(self->pr_socket, ssl_auth_certificate, self) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -584,6 +591,8 @@ SSLSocket_set_auth_certificate_callback(SSLSocket *self, PyObject *args)
 static SECStatus
 get_client_auth_data(void *arg, PRFileDesc *fd, CERTDistNames *caNames, CERTCertificate **pRetCert, SECKEYPrivateKey **pRetKey)
 {
+    PyGILState_STATE gstate;
+    Py_ssize_t n_base_args = 1;
     SSLSocket *self = arg;
     PyObject *return_args = NULL;
     PyObject *args = NULL;
@@ -594,13 +603,16 @@ get_client_auth_data(void *arg, PRFileDesc *fd, CERTDistNames *caNames, CERTCert
     PyObject *py_cert = NULL;
     PyObject *py_priv_key = NULL;
 
-    argc = 1;
-    if (self->client_auth_data_callback_data)
-        argc += PyTuple_Size(self->client_auth_data_callback_data);
+    gstate = PyGILState_Ensure();
+
+    argc = n_base_args;
+    if (self->py_client_auth_data_callback_data) {
+        argc += PyTuple_Size(self->py_client_auth_data_callback_data);
+    }
 
     if ((args = PyTuple_New(argc)) == NULL) {
         PySys_WriteStderr("SSLSocket.client_auth_data_callback: out of memory\n");
-        return SECFailure;
+	goto fail;
     }
 
     if ((py_cert_dist_names = cert_distnames_new_from_CERTDistNames(caNames)) == NULL) {
@@ -610,13 +622,13 @@ get_client_auth_data(void *arg, PRFileDesc *fd, CERTDistNames *caNames, CERTCert
 
     PyTuple_SetItem(args, 0, (PyObject *)py_cert_dist_names);
 
-    for (i = 1, j = 0; i < argc; i++, j++) {
-        item = PyTuple_GetItem(self->client_auth_data_callback_data, j);
+    for (i = n_base_args, j = 0; i < argc; i++, j++) {
+        item = PyTuple_GetItem(self->py_client_auth_data_callback_data, j);
         Py_INCREF(item);
         PyTuple_SetItem(args, i, item);
     }
 
-    if ((return_args = PyObject_CallObject(self->client_auth_data_callback, args)) == NULL) {
+    if ((return_args = PyObject_CallObject(self->py_client_auth_data_callback, args)) == NULL) {
         PySys_WriteStderr("exception in SSLSocket.client_auth_data_callback\n");
         PyErr_Print();
         goto fail;
@@ -669,16 +681,25 @@ get_client_auth_data(void *arg, PRFileDesc *fd, CERTDistNames *caNames, CERTCert
     }
 
     Py_DECREF(args);
-    Py_DECREF(py_cert_dist_names);
-    // FIXME: what should we do with the ref count for the certificate & private key?
-    //        we can't let them be destroyed while the NSS API is using them
-    //        but when will we get a chance after this callback returns to destroy them?
+    /*
+     * NSS WART
+     * There is no way to track the lifetime of the two returned objects.
+     *
+     * What should we do with the ref count for the certificate & private key?
+     * we can't let them be destroyed while the NSS API is using them
+     * but when will we get a chance after this callback returns to destroy them?
+     *
+     * Our bad solution is to bump the ref count and accept the memory leak :-(
+     */
     Py_INCREF(py_cert);
     Py_INCREF(py_priv_key);
     Py_DECREF(return_args);
 
     *pRetCert = ((Certificate *)py_cert)->cert;
     *pRetKey = ((PrivateKey *)py_priv_key)->private_key;
+
+    PyGILState_Release(gstate);
+
     return SECSuccess;
 
  bad_return:
@@ -687,10 +708,10 @@ get_client_auth_data(void *arg, PRFileDesc *fd, CERTDistNames *caNames, CERTCert
 
  fail:
     Py_XDECREF(args);
-    Py_XDECREF(py_cert_dist_names);
-    Py_XDECREF(py_cert);
-    Py_XDECREF(py_priv_key);
     Py_XDECREF(return_args);
+
+    PyGILState_Release(gstate);
+
     return SECFailure;
 }
 
@@ -763,11 +784,12 @@ Example::\n\
 static PyObject *
 SSLSocket_set_client_auth_data_callback(SSLSocket *self, PyObject *args)
 {
+    Py_ssize_t n_base_args = 1;
     Py_ssize_t argc;
     PyObject *callback;
     PyObject *callback_args = NULL;
 
-    TraceMethodEnter("SSLSocket_set_client_auth_data_callback", self);
+    TraceMethodEnter(self);
 
     argc = PyTuple_Size(args);
 
@@ -781,18 +803,14 @@ SSLSocket_set_client_auth_data_callback(SSLSocket *self, PyObject *args)
         return NULL;
     }
 
-    callback_args = PyTuple_GetSlice(args, 1, argc);
+    callback_args = PyTuple_GetSlice(args, n_base_args, argc);
+    
+    ASSIGN_REF(self->py_client_auth_data_callback, callback);
+    ASSIGN_NEW_REF(self->py_client_auth_data_callback_data, callback_args);
 
-    Py_INCREF(callback);
-    Py_XDECREF(self->client_auth_data_callback);
-    self->client_auth_data_callback = callback;
-
-    Py_INCREF(callback_args);
-    Py_XDECREF(self->client_auth_data_callback_data);
-    self->client_auth_data_callback_data = callback_args;
-
-    if (SSL_GetClientAuthDataHook(self->pr_socket, get_client_auth_data, self) != SECSuccess)
+    if (SSL_GetClientAuthDataHook(self->pr_socket, get_client_auth_data, self) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -800,39 +818,47 @@ SSLSocket_set_client_auth_data_callback(SSLSocket *self, PyObject *args)
 static void
 ssl_handshake_callback(PRFileDesc *fd, void *arg)
 {
-    SSLSocket *self = arg;
+    PyGILState_STATE gstate;
+    Py_ssize_t n_base_args = 1;
+    SSLSocket *py_sslsocket = arg;
     PyObject *result = NULL;
     PyObject *args = NULL;
     PyObject *item;
     Py_ssize_t argc;
     int i, j;
 
-    argc = 1;
-    if (self->handshake_callback_data)
-        argc += PyTuple_Size(self->handshake_callback_data);
+    gstate = PyGILState_Ensure();
+
+    argc = n_base_args;
+    if (py_sslsocket->py_handshake_callback_data)
+        argc += PyTuple_Size(py_sslsocket->py_handshake_callback_data);
 
     if ((args = PyTuple_New(argc)) == NULL) {
         PySys_WriteStderr("SSLSocket.handshake_callback: out of memory\n");
-        return;
+	goto exit;
     }
 
-    Py_INCREF(self);
-    PyTuple_SetItem(args, 0, (PyObject *)self);
+    Py_INCREF(py_sslsocket);
+    PyTuple_SetItem(args, 0, (PyObject *)py_sslsocket);
 
-    for (i = 1, j = 0; i < argc; i++, j++) {
-        item = PyTuple_GetItem(self->handshake_callback_data, j);
+    for (i = n_base_args, j = 0; i < argc; i++, j++) {
+        item = PyTuple_GetItem(py_sslsocket->py_handshake_callback_data, j);
         Py_INCREF(item);
         PyTuple_SetItem(args, i, item);
     }
 
-    if ((result = PyObject_CallObject(self->handshake_callback, args)) == NULL) {
+    if ((result = PyObject_CallObject(py_sslsocket->py_handshake_callback, args)) == NULL) {
         PySys_WriteStderr("exception in SSLSocket.handshake_callback\n");
         PyErr_Print();  /* this also clears the error */
         Py_DECREF(args);
-        return;
+	goto exit;
     }
 
     Py_DECREF(args);
+    Py_DECREF(result);
+
+ exit:
+    PyGILState_Release(gstate);
 }
 
 PyDoc_STRVAR(SSLSocket_set_handshake_callback_doc,
@@ -869,11 +895,12 @@ Example::\n\
 static PyObject *
 SSLSocket_set_handshake_callback(SSLSocket *self, PyObject *args)
 {
+    Py_ssize_t n_base_args = 1;
     Py_ssize_t argc;
     PyObject *callback;
     PyObject *callback_args = NULL;
 
-    TraceMethodEnter("SSLSocket_set_handshake_callback", self);
+    TraceMethodEnter(self);
 
     argc = PyTuple_Size(args);
 
@@ -887,18 +914,14 @@ SSLSocket_set_handshake_callback(SSLSocket *self, PyObject *args)
         return NULL;
     }
 
-    callback_args = PyTuple_GetSlice(args, 1, argc);
+    callback_args = PyTuple_GetSlice(args, n_base_args, argc);
 
-    Py_INCREF(callback);
-    Py_XDECREF(self->handshake_callback);
-    self->handshake_callback = callback;
+    ASSIGN_REF(self->py_handshake_callback, callback);
+    ASSIGN_NEW_REF(self->py_handshake_callback_data, callback_args);
 
-    Py_INCREF(callback_args);
-    Py_XDECREF(self->handshake_callback_data);
-    self->handshake_callback_data = callback_args;
-
-    if (SSL_HandshakeCallback(self->pr_socket, ssl_handshake_callback, self) != SECSuccess)
+    if (SSL_HandshakeCallback(self->pr_socket, ssl_handshake_callback, self) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -916,14 +939,12 @@ PyDoc_STRVAR(SSLSocket_set_pkcs11_pin_arg_doc,
 static PyObject *
 SSLSocket_set_pkcs11_pin_arg(SSLSocket *self, PyObject *args)
 {
-    TraceMethodEnter("SSLSocket_set_pkcs11_pin_arg", self);
+    TraceMethodEnter(self);
 
-    Py_XDECREF(self->pk11_pin_args);
-    Py_INCREF(args);
-    self->pk11_pin_args = args;
+    ASSIGN_REF(self->py_pk11_pin_args, args);
+
     if (SSL_SetPKCS11PinArg(self->pr_socket, args) != SECSuccess) {
-        Py_DECREF(self->pk11_pin_args);
-        self->pk11_pin_args = NULL;
+        Py_CLEAR(self->py_pk11_pin_args);
         return set_nspr_error(NULL);
     }
 
@@ -942,15 +963,15 @@ SSLSocket_get_pkcs11_pin_arg(SSLSocket *self, PyObject *args)
 {
     PyObject *pk11_pin_args = NULL;
 
-    TraceMethodEnter("SSLSocket_get_pkcs11_pin_arg", self);
+    TraceMethodEnter(self);
 
-    self->pk11_pin_args = args;
     pk11_pin_args = SSL_RevealPinArg(self->pr_socket);
 
-    assert(pk11_pin_args == self->pk11_pin_args);
+    assert(pk11_pin_args == self->py_pk11_pin_args);
 
-    if (pk11_pin_args == NULL)
+    if (pk11_pin_args == NULL) {
         Py_RETURN_NONE;
+    }
 
     Py_INCREF(pk11_pin_args);
     return pk11_pin_args;
@@ -979,7 +1000,7 @@ SSLSocket_config_secure_server(SSLSocket *self, PyObject *args)
     PrivateKey *py_priv_key = NULL;
     int kea = 0;
 
-    TraceMethodEnter("SSLSocket_config_secure_server", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "O!O!i:config_secure_server",
                           &CertificateType, &py_cert,
@@ -987,8 +1008,9 @@ SSLSocket_config_secure_server(SSLSocket *self, PyObject *args)
                           &kea))
         return NULL;
 
-    if (SSL_ConfigSecureServer(self->pr_socket, py_cert->cert, py_priv_key->private_key, kea) != SECSuccess)
+    if (SSL_ConfigSecureServer(self->pr_socket, py_cert->cert, py_priv_key->private_key, kea) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 
@@ -1013,10 +1035,11 @@ SSLSocket_get_peer_certificate(SSLSocket *self, PyObject *args)
     PyObject *py_cert = NULL;
 
     cert = SSL_PeerCertificate(self->pr_socket);
-    if (cert == NULL)
+    if (cert == NULL) {
         Py_RETURN_NONE;
+    }
 
-    if ((py_cert = Certificate_new_from_cert(cert)) == NULL) {
+    if ((py_cert = Certificate_new_from_CERTCertificate(cert)) == NULL) {
         return NULL;
     }
 
@@ -1037,10 +1060,11 @@ SSLSocket_get_certificate(SSLSocket *self, PyObject *args)
     PyObject *py_cert = NULL;
 
     cert = SSL_RevealCert(self->pr_socket);
-    if (cert == NULL)
+    if (cert == NULL) {
         Py_RETURN_NONE;
+    }
 
-    if ((py_cert = Certificate_new_from_cert(cert)) == NULL) {
+    if ((py_cert = Certificate_new_from_CERTCertificate(cert)) == NULL) {
         return NULL;
     }
 
@@ -1059,10 +1083,11 @@ resume this SSL session.\n\
 static PyObject *
 SSLSocket_invalidate_session(SSLSocket *self, PyObject *args)
 {
-    TraceMethodEnter("SSLSocket_invalidate_session", self);
+    TraceMethodEnter(self);
 
-    if (SSL_InvalidateSession(self->pr_socket) != SECSuccess)
+    if (SSL_InvalidateSession(self->pr_socket) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -1084,7 +1109,7 @@ SSLSocket_data_pending(SSLSocket *self, PyObject *args)
 {
     int data_pending = 0;
 
-    TraceMethodEnter("SSLSocket_data_pending", self);
+    TraceMethodEnter(self);
 
     data_pending = SSL_DataPending(self->pr_socket);
     return PyInt_FromLong(data_pending);
@@ -1147,7 +1172,7 @@ SSLSocket_get_security_status(SSLSocket *self, PyObject *args)
     char *subject = NULL;
     PyObject *return_value = NULL;
 
-    TraceMethodEnter("SSLSocket_get_security_status", self);
+    TraceMethodEnter(self);
 
     if (SSL_SecurityStatus(self->pr_socket, &on, &cipher, &key_size,
                            &secret_key_size, &issuer, &subject) != SECSuccess) {
@@ -1179,12 +1204,13 @@ SSLSocket_get_session_id(SSLSocket *self, PyObject *args)
     SECItem *sec_item = NULL;
     PyObject *return_value = NULL;
 
-    TraceMethodEnter("SSLSocket_get_session_id", self);
+    TraceMethodEnter(self);
 
-    if ((sec_item = SSL_GetSessionID(self->pr_socket)) == NULL)
+    if ((sec_item = SSL_GetSessionID(self->pr_socket)) == NULL) {
         return set_nspr_error(NULL);
+    }
 
-    return_value = SecItem_new_from_sec_item(sec_item, SECITEM_session_id);
+    return_value = SecItem_new_from_SECItem(sec_item, SECITEM_session_id);
 
     SECITEM_FreeItem(sec_item, PR_TRUE);
 
@@ -1249,13 +1275,14 @@ SSLSocket_set_sock_peer_id(SSLSocket *self, PyObject *args)
 {
     char *id = NULL;
 
-    TraceMethodEnter("SSLSocket_set_sock_peer_id", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "s:set_sock_peer_id"))
         return NULL;
 
-    if (SSL_SetSockPeerID(self->pr_socket, id) != SECSuccess)
+    if (SSL_SetSockPeerID(self->pr_socket, id) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -1286,13 +1313,14 @@ SSLSocket_set_cipher_pref(SSLSocket *self, PyObject *args)
     int cipher;
     int enabled;
 
-    TraceMethodEnter("SSLSocket_set_cipher_pref", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "ii:set_cipher_pref", &cipher, &enabled))
         return NULL;
 
-    if (SSL_CipherPrefSet(self->pr_socket, cipher, enabled) != SECSuccess)
+    if (SSL_CipherPrefSet(self->pr_socket, cipher, enabled) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -1314,13 +1342,14 @@ SSLSocket_get_cipher_pref(SSLSocket *self, PyObject *args)
     int cipher;
     int enabled;
 
-    TraceMethodEnter("SSLSocket_get_cipher_pref", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "i:get_cipher_pref", &cipher))
         return NULL;
 
-    if (SSL_CipherPrefGet(self->pr_socket, cipher, &enabled) != SECSuccess)
+    if (SSL_CipherPrefGet(self->pr_socket, cipher, &enabled) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     if (enabled)
         Py_RETURN_TRUE;
@@ -1351,13 +1380,14 @@ SSLSocket_set_hostname(SSLSocket *self, PyObject *args)
 {
     char *url = NULL;
 
-    TraceMethodEnter("SSLSocket_set_hostname", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "s:set_hostname", &url))
         return NULL;
 
-    if (SSL_SetURL(self->pr_socket, url) != SECSuccess)
+    if (SSL_SetURL(self->pr_socket, url) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -1377,10 +1407,11 @@ SSLSocket_get_hostname(SSLSocket *self, PyObject *args)
     char *url = NULL;
     PyObject *py_hostname = NULL;
 
-    TraceMethodEnter("SSLSocket_get_hostname", self);
+    TraceMethodEnter(self);
 
-    if ((url = SSL_RevealURL(self->pr_socket)) == NULL)
+    if ((url = SSL_RevealURL(self->pr_socket)) == NULL) {
         return set_nspr_error(NULL);
+    }
 
     py_hostname = PyString_FromString(url);
     PR_Free(url);
@@ -1406,8 +1437,9 @@ SSLSocket_set_certificate_db(SSLSocket *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "O!:set_certificate_db", CertDBType, &py_certdb))
         return NULL;
 
-    if (SSL_CertDBHandleSet(self->pr_socket, py_certdb->handle) != SECSuccess)
+    if (SSL_CertDBHandleSet(self->pr_socket, py_certdb->handle) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
 
     Py_RETURN_NONE;
@@ -1442,13 +1474,17 @@ SSLSocket_reset_handshake(SSLSocket *self, PyObject *args)
 {
     int as_server = 0;
 
-    TraceMethodEnter("SSLSocket_reset_handshake", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTuple(args, "i:reset_handshake", &as_server))
         return NULL;
 
-    if (SSL_ResetHandshake(self->pr_socket, as_server) != SECSuccess)
+    Py_BEGIN_ALLOW_THREADS
+    if (SSL_ResetHandshake(self->pr_socket, as_server) != SECSuccess) {
+        Py_BLOCK_THREADS
         return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 
@@ -1495,8 +1531,13 @@ initial handshake, it returns immediately without forcing a handshake.\n\
 static PyObject *
 SSLSocket_force_handshake(SSLSocket *self, PyObject *args)
 {
-    if (SSL_ForceHandshake(self->pr_socket) != SECSuccess)
+
+    Py_BEGIN_ALLOW_THREADS
+    if (SSL_ForceHandshake(self->pr_socket) != SECSuccess) {
+        Py_BLOCK_THREADS
         return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
@@ -1520,8 +1561,12 @@ SSLSocket_force_handshake_timeout(SSLSocket *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "I:force_handshake_timeout", &timeout))
         return NULL;
 
-    if (SSL_ForceHandshakeWithTimeout(self->pr_socket, timeout) != SECSuccess)
+    Py_BEGIN_ALLOW_THREADS
+    if (SSL_ForceHandshakeWithTimeout(self->pr_socket, timeout) != SECSuccess) {
+        Py_BLOCK_THREADS
         return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
@@ -1568,8 +1613,12 @@ SSLSocket_rehandshake(SSLSocket *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "i:rehandshake", &flush_cache))
         return NULL;
 
-    if (SSL_ReHandshake(self->pr_socket, flush_cache) != SECSuccess)
+    Py_BEGIN_ALLOW_THREADS
+    if (SSL_ReHandshake(self->pr_socket, flush_cache) != SECSuccess) {
+        Py_BLOCK_THREADS
         return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
@@ -1596,8 +1645,12 @@ SSLSocket_rehandshake_timeout(SSLSocket *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "iI:rehandshake_timeout", &flush_cache, &timeout))
         return NULL;
 
-    if (SSL_ReHandshakeWithTimeout(self->pr_socket, flush_cache, timeout) != SECSuccess)
+    Py_BEGIN_ALLOW_THREADS
+    if (SSL_ReHandshakeWithTimeout(self->pr_socket, flush_cache, timeout) != SECSuccess) {
+        Py_BLOCK_THREADS
         return set_nspr_error(NULL);
+    }
+    Py_END_ALLOW_THREADS
 
     Py_RETURN_NONE;
 }
@@ -1624,8 +1677,9 @@ SSLSocket_import_tcp_socket(Socket *unused_class, PyObject *args)
 	return NULL;
 
     sock0 = PR_ImportTCPSocket(osfd);
-    if (sock0 == NULL)
+    if (sock0 == NULL) {
 	return set_nspr_error(NULL);
+    }
     sock = SSL_ImportFD(NULL, sock0);
     if (sock == NULL) {
 	set_nspr_error(NULL);
@@ -1633,14 +1687,19 @@ SSLSocket_import_tcp_socket(Socket *unused_class, PyObject *args)
 	return NULL;
     }
 
+    Py_BEGIN_ALLOW_THREADS
     if (PR_GetSockName(sock, &addr) != PR_SUCCESS) {
+        Py_BLOCK_THREADS
 	set_nspr_error(NULL);
 	goto error;
     }
-    if ((return_value = SSLSocket_new_from_prfiledesc(sock,
+    Py_END_ALLOW_THREADS
+
+    if ((return_value = SSLSocket_new_from_PRFileDesc(sock,
 						      PR_NetAddrFamily(&addr)))
-	== NULL)
+	== NULL) {
 	goto error;
+    }
 
     return return_value;
 
@@ -1689,37 +1748,63 @@ SSLSocket_new(PyTypeObject *type, PyObject *args, PyObject *kwds)
 {
     SSLSocket *self;
 
-    TraceObjNewEnter("SSLSocket_new", type);
+    TraceObjNewEnter(type);
 
-    if ((self = (SSLSocket *)SocketType.tp_new(type, args, kwds)) == NULL)
+    if ((self = (SSLSocket *)SocketType.tp_new(type, args, kwds)) == NULL) {
         return NULL;
+    }
 
-    self->auth_certificate_callback = NULL;
-    self->auth_certificate_callback_data = NULL;
-    self->pk11_pin_args = NULL;
-    self->handshake_callback = NULL;
-    self->handshake_callback_data = NULL;
-    self->client_auth_data_callback = NULL;
-    self->client_auth_data_callback_data = NULL;
+    self->py_auth_certificate_callback = NULL;
+    self->py_auth_certificate_callback_data = NULL;
+    self->py_pk11_pin_args = NULL;
+    self->py_handshake_callback = NULL;
+    self->py_handshake_callback_data = NULL;
+    self->py_client_auth_data_callback = NULL;
+    self->py_client_auth_data_callback_data = NULL;
 
-    TraceObjNewLeave("SSLSocket_new", self);
+    TraceObjNewLeave(self);
     return (PyObject *)self;
+}
+
+static int
+SSLSocket_traverse(SSLSocket *self, visitproc visit, void *arg)
+{
+    Py_VISIT(self->py_auth_certificate_callback);
+    Py_VISIT(self->py_auth_certificate_callback_data);
+    Py_VISIT(self->py_pk11_pin_args);
+    Py_VISIT(self->py_handshake_callback);
+    Py_VISIT(self->py_handshake_callback_data);
+    Py_VISIT(self->py_client_auth_data_callback);
+    Py_VISIT(self->py_client_auth_data_callback_data);
+
+    return Py_TYPE(self)->tp_base->tp_traverse((PyObject *)self, visit, arg);
+}
+
+static int
+SSLSocket_clear(SSLSocket* self)
+{
+    TraceMethodEnter(self);
+
+    Py_CLEAR(self->py_auth_certificate_callback);
+    Py_CLEAR(self->py_auth_certificate_callback_data);
+    Py_CLEAR(self->py_pk11_pin_args);
+    Py_CLEAR(self->py_handshake_callback);
+    Py_CLEAR(self->py_handshake_callback_data);
+    Py_CLEAR(self->py_client_auth_data_callback);
+    Py_CLEAR(self->py_client_auth_data_callback_data);
+
+    return Py_TYPE(self)->tp_base->tp_clear((PyObject *)self);
+
 }
 
 static void
 SSLSocket_dealloc(SSLSocket* self)
 {
 
-    TraceMethodEnter("SSLSocket_dealloc", self);
+    TraceMethodEnter(self);
 
-    Py_XDECREF(self->auth_certificate_callback);
-    Py_XDECREF(self->auth_certificate_callback_data);
-    Py_XDECREF(self->pk11_pin_args);
-    Py_XDECREF(self->handshake_callback);
-    Py_XDECREF(self->handshake_callback_data);
-    Py_XDECREF(self->client_auth_data_callback);
-    Py_XDECREF(self->client_auth_data_callback_data);
-    self->ob_type->tp_free((PyObject*)self);
+    SSLSocket_clear(self);
+    return Py_TYPE(self)->tp_base->tp_dealloc((PyObject *)self);
 }
 
 PyDoc_STRVAR(SSLSocket_doc,
@@ -1746,7 +1831,7 @@ SSLSocket_init(SSLSocket *self, PyObject *args, PyObject *kwds)
 {
     PRFileDesc *ssl_socket = NULL;
 
-    TraceMethodEnter("SSLSocket_init", self);
+    TraceMethodEnter(self);
 
     if (SocketType.tp_init((PyObject *)self, args, kwds) < 0)
         return -1;
@@ -1757,11 +1842,11 @@ SSLSocket_init(SSLSocket *self, PyObject *args, PyObject *kwds)
     }
 
     assert(self->pr_socket == ssl_socket);
-    TraceMethodLeave("SSLSocket_init", self);
+    TraceMethodLeave(self);
     return 0;
 }
 
-PyTypeObject SSLSocketType = {
+static PyTypeObject SSLSocketType = {
     PyObject_HEAD_INIT(NULL)
     0,						/* ob_size */
     "nss.ssl.SSLSocket",			/* tp_name */
@@ -1782,10 +1867,10 @@ PyTypeObject SSLSocketType = {
     0,						/* tp_getattro */
     0,						/* tp_setattro */
     0,						/* tp_as_buffer */
-    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE,	/* tp_flags */
+    Py_TPFLAGS_DEFAULT | Py_TPFLAGS_BASETYPE | Py_TPFLAGS_HAVE_GC,	/* tp_flags */
     SSLSocket_doc,				/* tp_doc */
-    0,						/* tp_traverse */
-    0,						/* tp_clear */
+    (traverseproc)SSLSocket_traverse,		/* tp_traverse */
+    (inquiry)SSLSocket_clear,			/* tp_clear */
     0,						/* tp_richcompare */
     0,						/* tp_weaklistoffset */
     0,						/* tp_iter */
@@ -1875,6 +1960,7 @@ NSS_init(PyObject *self, PyObject *args)
     if (NSS_Init(cert_dir) != SECSuccess) {
         return set_nspr_error(NULL);
     }
+
     Py_RETURN_NONE;
 }
 
@@ -1895,9 +1981,13 @@ NSS_shutdown(PyObject *self, PyObject *args)
     if (PyErr_Warn(PyExc_DeprecationWarning, "nss_shutdown() has been moved to the nss module, use nss.nss_shutdown() instead of ssl.nss_shutdown()") < 0)
         return NULL;
 
+    Py_BEGIN_ALLOW_THREADS
     if (NSS_Shutdown() != SECSuccess) {
+        Py_BLOCK_THREADS
         return set_nspr_error(NULL);
     }
+    Py_END_ALLOW_THREADS
+
     Py_RETURN_NONE;
 }
 
@@ -1981,8 +2071,9 @@ SSL_set_default_cipher_pref(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "ii:set_default_cipher_pref", &cipher, &enabled))
         return NULL;
 
-    if (SSL_CipherPrefSetDefault(cipher, enabled) != SECSuccess)
+    if (SSL_CipherPrefSetDefault(cipher, enabled) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -2007,8 +2098,9 @@ SSL_get_default_cipher_pref(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "i:get_default_cipher_pref", &cipher))
         return NULL;
 
-    if (SSL_CipherPrefGetDefault(cipher, &enabled) != SECSuccess)
+    if (SSL_CipherPrefGetDefault(cipher, &enabled) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     if (enabled)
         Py_RETURN_TRUE;
@@ -2046,8 +2138,9 @@ SSL_set_cipher_policy(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "ii:set_cipher_policy", &cipher, &policy))
         return NULL;
 
-    if (SSL_CipherPolicySet(cipher, policy) != SECSuccess)
+    if (SSL_CipherPolicySet(cipher, policy) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -2071,8 +2164,9 @@ SSL_get_cipher_policy(PyObject *self, PyObject *args)
     if (!PyArg_ParseTuple(args, "i:get_cipher_policy", &cipher))
         return NULL;
 
-    if (SSL_CipherPolicyGet(cipher, &policy) != SECSuccess)
+    if (SSL_CipherPolicyGet(cipher, &policy) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
 
     if (policy)
@@ -2136,15 +2230,16 @@ SSL_config_server_session_id_cache(PyObject *self, PyObject *args, PyObject *kwd
     PRUint32 ssl3_timeout = 0;
     char *directory = NULL;
 
-    TraceMethodEnter("config_server_session_id_cache", self);
+    TraceMethodEnter(self);
 
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "|iIIz:config_server_session_id_cache", kwlist,
                                      &max_cache_entries, &ssl2_timeout, &ssl3_timeout, &directory))
         return NULL;
 
     if (SSL_ConfigServerSessionIDCache(max_cache_entries, ssl2_timeout,
-                                       ssl3_timeout, directory) != SECSuccess)
+                                       ssl3_timeout, directory) != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -2179,8 +2274,9 @@ features.\n\
 static PyObject *
 NSS_set_domestic_policy(PyObject *self, PyObject *args)
 {
-    if (NSS_SetDomesticPolicy() != SECSuccess)
+    if (NSS_SetDomesticPolicy() != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -2196,8 +2292,9 @@ features.\n\
 static PyObject *
 NSS_set_export_policy(PyObject *self, PyObject *args)
 {
-    if (NSS_SetExportPolicy() != SECSuccess)
+    if (NSS_SetExportPolicy() != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -2212,8 +2309,9 @@ regulations related to software products with encryption features.\n\
 static PyObject *
 NSS_set_france_policy(PyObject *self, PyObject *args)
 {
-    if (NSS_SetFrancePolicy() != SECSuccess)
+    if (NSS_SetFrancePolicy() != SECSuccess) {
         return set_nspr_error(NULL);
+    }
 
     Py_RETURN_NONE;
 }
@@ -2235,6 +2333,13 @@ static PyMethodDef module_methods[] = {
 {"set_export_policy",              (PyCFunction)NSS_set_export_policy,              METH_NOARGS,                NSS_set_export_policy_doc},
 {"set_france_policy",              (PyCFunction)NSS_set_france_policy,              METH_NOARGS,                NSS_set_france_policy_doc},
 {NULL, NULL}            /* Sentinel */
+};
+
+/* ============================== Module Exports ============================= */
+
+static PyNSS_SSL_C_API_Type nss_ssl_c_api =
+{
+    &SSLSocketType,                /* sslsocket_type */
 };
 
 /* ============================== Module Construction ============================= */
@@ -2259,18 +2364,21 @@ initssl(void)
         return;
 
     SSLSocketType.tp_base = &SocketType;
-    if (PyType_Ready(&SSLSocketType) < 0)
-        return;
 
-    if ((m = Py_InitModule3("nss.ssl", module_methods, module_doc)) == NULL)
+    if ((m = Py_InitModule3("nss.ssl", module_methods, module_doc)) == NULL) {
         return;
+    }
 
-    Py_INCREF(&SSLSocketType);
-    PyModule_AddObject(m, "SSLSocket", (PyObject *)&SSLSocketType);
+    TYPE_READY(SSLSocketType);
+
+    /* Export C API */
+    if (PyModule_AddObject(m, "_C_API", PyCObject_FromVoidPtr((void *)&nss_ssl_c_api, NULL)) != 0)
+        return;
 
     /* SSL_ImplementedCiphers */
-    if ((py_ssl_implemented_ciphers = PyTuple_New(SSL_NumImplementedCiphers)) == NULL)
+    if ((py_ssl_implemented_ciphers = PyTuple_New(SSL_NumImplementedCiphers)) == NULL) {
         return;
+    }
 
     for (i = 0; i < SSL_NumImplementedCiphers; i++) {
         PyTuple_SetItem(py_ssl_implemented_ciphers, i, PyInt_FromLong(SSL_ImplementedCiphers[i]));

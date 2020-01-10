@@ -1,6 +1,6 @@
 Metadata-Version: 1.0
 Name: python-nss
-Version: 0.8
+Version: 0.11
 Summary: Python bindings for Network Security Services (NSS) and Netscape Portable Runtime (NSPR)
 Home-page: :pserver:anonymous@cvs-mirror.mozilla.org:/cvsroot mozilla/security/python/nss
 Author: John Dennis

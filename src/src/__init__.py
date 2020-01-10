@@ -69,6 +69,48 @@ referring to the Mozilla NSS/NSPR documentation and/or header files or
 who is porting an existing C application to python. Minor other
 changes have been made in the interest of being "Pythonic".
 
+========================
+Deprecated Functionality
+========================
+
+Some elements of the binding have been deprecated because of lessons
+learned along the way. The following emit deprecation warnings and
+should not be used, they will be removed in a subsequent release.
+
+`io.NetworkAddress()`
+    `NetworkAddress` initialization from a string parameter only works
+    for IPv4, use `AddrInfo` instead.
+
+`io.NetworkAddress.set_from_string()`
+    `NetworkAddress` initialization from a string parameter only works
+    for IPv4, use `AddrInfo` instead.
+
+`io.NetworkAddress.hostentry`
+    `HostEntry` objects only support IPv4, this property will be
+    removed, use `AddrInfo` instead.
+
+`io.HostEntry.get_network_addresses()`
+    Use iteration instead (e.g. for net_adder in hostentry), the port
+    parameter is not respected, port will be value when `HostEntry`
+    object was created.
+
+`io.HostEntry.get_network_address()`
+    Use indexing instead (e.g. hostentry[i]), the port parameter is
+    not respected, port will be value when `HostEntry` object was
+    created.
+
+`ssl.nssinit()`
+    nssinit has been moved to the nss module, use `nss.nss_init()`
+    instead of ssl.nssinit
+
+`ssl.nss_init()`
+    nss_init has been moved to the nss module, use `nss.nss_init()`
+    instead of ssl.nssinit
+
+`ssl.nss_shutdown()`
+    nss_shutdown() has been moved to the nss module, use
+    `nss.nss_shutdown()` instead of ssl.nss_shutdown()
+
 ===============
 Getting Started
 ===============
@@ -112,7 +154,7 @@ server's hostname will be "myhost.example.com".
 3. Create a server certificate and sign it. Our example server will
    use this::
 
-     certutil -d pki -S -c myca -s "CN=myhost.example.com" -n myhost -t "C,C,C" -m 2
+     certutil -d pki -S -c myca -s "CN=myhost.example.com" -n myhost -t "u,u,u" -m 2
 
    This creates an individual certificate issued by the CA "myca" and
    adds it to the certificate database with a subject of
@@ -287,7 +329,6 @@ Issues
       OpenSSL API, there is little abstraction. Thus there is a
       sizeable body of Python code which expects the OpenSSL model for
       IO ready and has exception handlers based on OpenSSL.
-	
 
 ===
 FAQ
@@ -296,4 +337,5 @@ FAQ
 To be added
 
 """
-__version__ = '0.8'
+__version__ = '0.11'
+

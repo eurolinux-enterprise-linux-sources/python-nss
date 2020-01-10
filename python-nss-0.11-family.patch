@@ -1,0 +1,314 @@
+Index: doc/examples/httplib_example.py
+===================================================================
+RCS file: /cvsroot/mozilla/security/python/nss/doc/examples/httplib_example.py,v
+retrieving revision 1.4
+diff -u -r1.4 httplib_example.py
+--- doc/examples/httplib_example.py	21 Feb 2011 17:09:29 -0000	1.4
++++ doc/examples/httplib_example.py	22 Mar 2011 16:31:34 -0000
+@@ -175,8 +175,8 @@
+         ssl.set_domestic_policy()
+         nss.set_password_callback(password_callback)
+ 
+-    def _create_socket(self):
+-        self.sock = ssl.SSLSocket()
++    def _create_socket(self, family):
++        self.sock = ssl.SSLSocket(family)
+         self.sock.set_ssl_option(ssl.SSL_SECURITY, True)
+         self.sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_CLIENT, True)
+         self.sock.set_hostname(self.host)
+@@ -199,7 +199,7 @@
+ 
+         for net_addr in addr_info:
+             net_addr.port = self.port
+-            self._create_socket()
++            self._create_socket(net_addr.family)
+             try:
+                 logging.debug("try connect: %s", net_addr)
+                 self.sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
+@@ -230,7 +230,7 @@
+ 
+         for net_addr in addr_info:
+             net_addr.port = self.port
+-            self.sock = io.Socket()
++            self.sock = io.Socket(net_addr.family)
+             try:
+                 logging.debug("try connect: %s", net_addr)
+                 self.sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
+Index: doc/examples/ssl_example.py
+===================================================================
+RCS file: /cvsroot/mozilla/security/python/nss/doc/examples/ssl_example.py,v
+retrieving revision 1.7
+diff -u -r1.7 ssl_example.py
+--- doc/examples/ssl_example.py	21 Feb 2011 17:09:29 -0000	1.7
++++ doc/examples/ssl_example.py	22 Mar 2011 16:31:34 -0000
+@@ -37,6 +37,9 @@
+ #
+ # ***** END LICENSE BLOCK *****
+ 
++import warnings
++warnings.simplefilter( "always", DeprecationWarning)
++
+ import os
+ import sys
+ import getopt
+@@ -190,7 +193,7 @@
+         net_addr.port = port
+ 
+         if use_ssl:
+-            sock = ssl.SSLSocket()
++            sock = ssl.SSLSocket(net_addr.family)
+ 
+             # Set client SSL socket options
+             sock.set_ssl_option(ssl.SSL_SECURITY, True)
+@@ -209,7 +212,7 @@
+             sock.set_auth_certificate_callback(auth_certificate_callback,
+                                                nss.get_default_certdb())
+         else:
+-            sock = io.Socket()
++            sock = io.Socket(net_addr.family)
+ 
+         try:
+             print "client trying connection to: %s" % (net_addr)
+@@ -283,7 +286,7 @@
+     net_addr = io.NetworkAddress(io.PR_IpAddrAny, port, family)
+ 
+     if use_ssl:
+-        sock = ssl.SSLSocket()
++        sock = ssl.SSLSocket(net_addr.family)
+ 
+         # Set server SSL socket options
+         sock.set_pkcs11_pin_arg(password)
+@@ -302,7 +305,7 @@
+         sock.reset_handshake(True) # FIXME: is this needed?
+ 
+     else:
+-        sock = io.Socket()
++        sock = io.Socket(net_addr.family)
+ 
+     # Bind to our network address and listen for clients
+     sock.bind(net_addr)
+Index: doc/examples/verify_server.py
+===================================================================
+RCS file: /cvsroot/mozilla/security/python/nss/doc/examples/verify_server.py,v
+retrieving revision 1.4
+diff -u -r1.4 verify_server.py
+--- doc/examples/verify_server.py	21 Feb 2011 17:09:29 -0000	1.4
++++ doc/examples/verify_server.py	22 Mar 2011 16:31:34 -0000
+@@ -144,7 +144,7 @@
+ 
+     for net_addr in addr_info:
+         net_addr.port = port
+-        sock = ssl.SSLSocket()
++        sock = ssl.SSLSocket(net_addr.family)
+         # Set client SSL socket options
+         sock.set_ssl_option(ssl.SSL_SECURITY, True)
+         sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_CLIENT, True)
+Index: src/__init__.py
+===================================================================
+RCS file: /cvsroot/mozilla/security/python/nss/src/__init__.py,v
+retrieving revision 1.10
+diff -u -r1.10 __init__.py
+--- src/__init__.py	21 Feb 2011 17:09:29 -0000	1.10
++++ src/__init__.py	22 Mar 2011 16:31:34 -0000
+@@ -111,6 +111,14 @@
+     nss_shutdown() has been moved to the nss module, use
+     `nss.nss_shutdown()` instead of ssl.nss_shutdown()
+ 
++`io.Socket()` and `ssl.SSLSocket()` without explicit family parameter
++    Socket initialization will require the family parameter in the future.
++    The default family parameter of PR_AF_INET is deprecated because
++    when iterating through `NetworkAddress` objects returned by
++    `AddrInfo` some address may be an IPv6 address. Suggest using the
++    family property of the NetworkAddress object associated with the
++    socket, e.g. Socket(net_addr.family)
++
+ ===============
+ Getting Started
+ ===============
+@@ -194,7 +202,7 @@
+ - If you are implementing an SSL server call config_secure_server()
+   (see ssl_example.py)::
+ 
+-    sock = ssl.SSLSocket()
++    sock = ssl.SSLSocket(net_addr.family)
+     sock.config_secure_server(server_cert, priv_key, server_cert_kea)
+ 
+   **WARNING** you must call config_secure_server() for SSL servers, if
+Index: src/py_nspr_io.c
+===================================================================
+RCS file: /cvsroot/mozilla/security/python/nss/src/py_nspr_io.c,v
+retrieving revision 1.10
+diff -u -r1.10 py_nspr_io.c
+--- src/py_nspr_io.c	21 Feb 2011 17:09:30 -0000	1.10
++++ src/py_nspr_io.c	22 Mar 2011 16:31:35 -0000
+@@ -874,7 +874,7 @@
+         return\n\
+     for net_addr in addr_info:\n\
+         net_addr.port = port\n\
+-        sock = io.Socket()\n\
++        sock = io.Socket(net_addr.family)\n\
+         try:\n\
+             sock.connect(net_addr, timeout=io.seconds_to_interval(1))\n\
+             return\n\
+@@ -1297,7 +1297,7 @@
+     host_entry = io.HostEntry(hostname)\n\
+     for net_addr in host_entry:\n\
+         net_addr.port = port\n\
+-        sock = io.Socket()\n\
++        sock = io.Socket(net_addr.family)\n\
+         try:\n\
+             sock.connect(net_addr, timeout=io.seconds_to_interval(1))\n\
+             break\n\
+@@ -1421,7 +1421,7 @@
+     PyObject *aliases = NULL;
+     PyObject *addrs = NULL;
+     PyObject *args = NULL;
+-    PyObject *format;
++    PyObject *format = NULL;
+     PyObject *text = NULL;
+ 
+     if (self->py_aliases) {
+@@ -1569,6 +1569,17 @@
+ /* ============================== Socket Class ============================== */
+ /* ========================================================================== */
+ 
++#define SOCKET_CHECK_FAMILY(py_netaddr)                                 \
++{                                                                       \
++    if (self->family != PR_NetAddrFamily(&py_netaddr->pr_netaddr)) {    \
++        PyErr_Format(PyExc_ValueError,                                  \
++                     "Socket family (%s) does not match NetworkAddress family (%s)", \
++                     pr_family_str(self->family),                       \
++                     pr_family_str(PR_NetAddrFamily(&py_netaddr->pr_netaddr))); \
++        return NULL;                                                    \
++    }                                                                   \
++}
++
+ static void
+ Socket_init_from_PRFileDesc(Socket *self, PRFileDesc *pr_socket, int family)
+ {
+@@ -2090,6 +2101,8 @@
+                                      &NetworkAddressType, &py_netaddr, &timeout))
+         return NULL;
+ 
++    SOCKET_CHECK_FAMILY(py_netaddr);
++
+     ASSIGN_REF(self->py_netaddr, py_netaddr);
+ 
+     Py_BEGIN_ALLOW_THREADS
+@@ -2287,6 +2300,8 @@
+     if (!PyArg_ParseTuple(args, "O!:bind", &NetworkAddressType, &py_netaddr))
+         return NULL;
+ 
++    SOCKET_CHECK_FAMILY(py_netaddr);
++
+     ASSIGN_REF(self->py_netaddr, py_netaddr);
+ 
+     Py_BEGIN_ALLOW_THREADS
+@@ -2814,6 +2829,8 @@
+                                      &requested_amount, &NetworkAddressType, &py_netaddr, &timeout))
+         return NULL;
+ 
++    SOCKET_CHECK_FAMILY(py_netaddr);
++
+     ASSIGN_REF(self->py_netaddr, py_netaddr);
+ 
+     if ((py_buf = PyString_FromStringAndSize((char *) 0, requested_amount)) == NULL) {
+@@ -2958,6 +2975,8 @@
+                                      &buf, &len, &NetworkAddressType, &py_netaddr, &timeout))
+         return NULL;
+ 
++    SOCKET_CHECK_FAMILY(py_netaddr);
++
+     ASSIGN_REF(self->py_netaddr, py_netaddr);
+ 
+     Py_BEGIN_ALLOW_THREADS
+@@ -3375,16 +3394,26 @@
+ Socket_init(Socket *self, PyObject *args, PyObject *kwds)
+ {
+     static char *kwlist[] = {"family", "type", NULL};
++    PyObject *py_family = NULL;
+     int family = PR_AF_INET;
+     int desc_type = PR_DESC_SOCKET_TCP;
+     PRFileDesc *pr_socket = NULL;
+ 
+     TraceMethodEnter(self);
+ 
+-    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|ii", kwlist,
+-                                     &family, &desc_type))
++    if (!PyArg_ParseTupleAndKeywords(args, kwds, "|O!i", kwlist,
++                                     &PyInt_Type, &py_family, &desc_type))
+         return -1;
+ 
++    if (py_family) {
++        family = PyInt_AsLong(py_family);
++    } else {
++        if (PyErr_WarnEx(PyExc_DeprecationWarning,
++                         "Socket initialization will require family parameter in future, default family parameter of PR_AF_INET is deprecated. Suggest using the family property of the NetworkAddress object associated with the socket, e.g. Socket(net_addr.family)", 1) < 0)
++            return -1;
++        
++    }
++
+     /* If reinitializing, first close down previous socket */
+     if (self->pr_socket) {
+ 	Py_BEGIN_ALLOW_THREADS
+Index: src/py_ssl.c
+===================================================================
+RCS file: /cvsroot/mozilla/security/python/nss/src/py_ssl.c,v
+retrieving revision 1.12
+diff -u -r1.12 py_ssl.c
+--- src/py_ssl.c	21 Feb 2011 17:09:30 -0000	1.12
++++ src/py_ssl.c	22 Mar 2011 16:31:35 -0000
+@@ -776,7 +776,7 @@
+                     pass\n\
+             return False\n\
+     \n\
+-    sock = ssl.SSLSocket()\n\
++    sock = ssl.SSLSocket(net_addr.family)\n\
+     sock.set_client_auth_data_callback(client_auth_data_callback, nickname, password, nss.get_default_certdb())\n\
+ \n\
+ ");
+@@ -887,7 +887,7 @@
+     def handshake_callback(sock):\n\
+         print 'handshake complete, peer = %s' % (sock.get_peer_name())\n\
+     \n\
+-    sock = ssl.SSLSocket()\n\
++    sock = ssl.SSLSocket(net_addr.family)\n\
+     sock.set_handshake_callback(handshake_callback)\n\
+ \n\
+ ");
+Index: test/setup_certs.py
+===================================================================
+RCS file: /cvsroot/mozilla/security/python/nss/test/setup_certs.py,v
+retrieving revision 1.2
+diff -u -r1.2 setup_certs.py
+--- test/setup_certs.py	21 Feb 2011 17:09:30 -0000	1.2
++++ test/setup_certs.py	22 Mar 2011 16:31:35 -0000
+@@ -225,6 +225,7 @@
+ -d --debug              show run information
+ -w --password           set the certificate database password
+ -d --dbdir              set the datbase directory
++-s --server-subject     set the server's subject
+ 
+ Examples:
+ 
+@@ -240,9 +241,9 @@
+ 
+     try:
+         try:
+-            opts, args = getopt.getopt(argv[1:], 'hl:L:vDw:d:',
++            opts, args = getopt.getopt(argv[1:], 'hl:L:vDw:d:s:',
+                                        ['help', 'logfile=', 'verbose', 'debug',
+-                                        'password', 'dbdir'])
++                                        'password', 'dbdir', 'server-subject'])
+         except getopt.GetoptError, e:
+             raise Usage(e)
+             return 2
+@@ -269,6 +270,8 @@
+                 config['db_passwd'] = a
+             elif o in ('-d', '--dbdir'):
+                 config['dbdir'] = a
++            elif o in ('-s', '--server-subject'):
++                config['server_subject'] = 'CN=%s' % a
+             else:
+                 raise Usage("command argument '%s' not handled, internal error" % o)
+     except Usage, e:
