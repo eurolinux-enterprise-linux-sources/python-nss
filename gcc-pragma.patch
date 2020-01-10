@@ -1,0 +1,43 @@
+diff -r -u python-nss-0.16.0.orig/src/py_nss.c python-nss-0.16.0/src/py_nss.c
+--- python-nss-0.16.0.orig/src/py_nss.c	2014-10-23 19:15:12.000000000 -0400
++++ python-nss-0.16.0/src/py_nss.c	2015-02-18 11:09:13.298891722 -0500
+@@ -19094,6 +19094,8 @@
+ 
+ /* ============================== Class Methods ============================= */
+ 
++#pragma GCC diagnostic push
++#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
+ static PyObject *
+ CertVerifyLogNodeError_format_lines(CertVerifyLogNode *self, int level, PyObject *lines)
+ {
+@@ -19127,10 +19129,7 @@
+     switch (node->error) {
+     case SEC_ERROR_INADEQUATE_KEY_USAGE: {
+         // NSS WART - pointers and ints are not the same thing
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
+         unsigned int flags = (unsigned int)node->arg;
+-#pragma GCC diagnostic pop
+ 
+         if ((obj = key_usage_flags(flags, repr_kind)) == NULL) {
+             goto fail;
+@@ -19140,10 +19139,7 @@
+     } break;
+     case SEC_ERROR_INADEQUATE_CERT_TYPE: {
+         // NSS WART - pointers and ints are not the same thing
+-#pragma GCC diagnostic push
+-#pragma GCC diagnostic ignored "-Wpointer-to-int-cast"
+         unsigned int flags = (unsigned int)node->arg;
+-#pragma GCC diagnostic pop
+ 
+         if ((obj = cert_type_flags(flags, repr_kind)) == NULL) {
+             goto fail;
+@@ -19175,6 +19171,7 @@
+     Py_XDECREF(obj);
+     return NULL;
+ }
++#pragma GCC diagnostic pop
+ 
+ static PyObject *
+ CertVerifyLogNode_format_lines(CertVerifyLogNode *self, PyObject *args, PyObject *kwds)
+Only in python-nss-0.16.0/src: py_nss.c~

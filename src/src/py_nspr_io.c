@@ -233,7 +233,7 @@ NetworkAddress_init_from_address_string(NetworkAddress *self, const char *addr_s
                      addr_str, pr_family_str(family));
         return NULL;
     }
-      
+
     if ((canonical_name = PR_GetCanonNameFromAddrInfo(pr_addrinfo)) != NULL) {
         if ((self->py_hostname = PyString_FromString(canonical_name)) == NULL) {
             PR_FreeAddrInfo(pr_addrinfo);
@@ -419,7 +419,7 @@ NetworkAddress_set_from_string(NetworkAddress *self, PyObject *args, PyObject *k
             Py_DECREF(ascii_str);
             return NULL;
         }
-        
+
         result = NetworkAddress_init_from_address_string(self, addr_str,
                                                          PRNetAddr_port(&self->pr_netaddr),
                                                          family);
@@ -893,7 +893,7 @@ AddrInfo_init(AddrInfo *self, PyObject *args, PyObject *kwds)
     while ((iter = PR_EnumerateAddrInfo(iter, self->pr_addrinfo, 0, &pr_netaddr)) != NULL) {
         len++;
     }
-    
+
     if ((self->py_netaddrs = PyTuple_New(len)) == NULL) {
         return -1;
     }
@@ -908,7 +908,7 @@ AddrInfo_init(AddrInfo *self, PyObject *args, PyObject *kwds)
         PyTuple_SetItem(self->py_netaddrs, i, py_netaddr);
         i++;
     }
-    
+
     if ((canonical_name = PR_GetCanonNameFromAddrInfo(self->pr_addrinfo)) == NULL) {
         self->py_canonical_name = Py_None;
         Py_INCREF(self->py_canonical_name);
@@ -1719,7 +1719,7 @@ Socket_set_socket_option(Socket *self, PyObject *args)
 {
     PyObject *py_option = NULL;
     int option;
-    int bool;
+    int boolean;
     unsigned int uint;
     NetworkAddress *mcaddr = NULL;
     NetworkAddress *ifaddr = NULL;
@@ -1742,25 +1742,25 @@ Socket_set_socket_option(Socket *self, PyObject *args)
 
     switch(option) {
     case PR_SockOpt_Nonblocking:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.non_blocking = bool;
+        data.value.non_blocking = boolean;
         break;
     case PR_SockOpt_Linger:
-        if (!PyArg_ParseTuple(args, "iiI:set_socket_option", &option, &bool, &uint))
+        if (!PyArg_ParseTuple(args, "iiI:set_socket_option", &option, &boolean, &uint))
             return NULL;
-        data.value.linger.polarity = bool;
+        data.value.linger.polarity = boolean;
         data.value.linger.linger = uint;
         break;
     case PR_SockOpt_Reuseaddr:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.reuse_addr = bool;
+        data.value.reuse_addr = boolean;
         break;
     case PR_SockOpt_Keepalive:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.keep_alive = bool;
+        data.value.keep_alive = boolean;
         break;
     case PR_SockOpt_RecvBufferSize:
         if (!PyArg_ParseTuple(args, "iI:set_socket_option", &option, &uint))
@@ -1810,14 +1810,14 @@ Socket_set_socket_option(Socket *self, PyObject *args)
         data.value.mcast_ttl = uint;
         break;
     case PR_SockOpt_McastLoopback:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.mcast_loopback = bool;
+        data.value.mcast_loopback = boolean;
         break;
     case PR_SockOpt_NoDelay:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.no_delay = bool;
+        data.value.no_delay = boolean;
         break;
     case PR_SockOpt_MaxSegment:
         if (!PyArg_ParseTuple(args, "iI:set_socket_option", &option, &uint))
@@ -1825,9 +1825,9 @@ Socket_set_socket_option(Socket *self, PyObject *args)
         data.value.max_segment = uint;
         break;
     case PR_SockOpt_Broadcast:
-        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &bool))
+        if (!PyArg_ParseTuple(args, "ii:set_socket_option", &option, &boolean))
             return NULL;
-        data.value.broadcast = bool;
+        data.value.broadcast = boolean;
         break;
     default:
         PyErr_SetString(PyExc_ValueError, "set_socket_option: unknown option");
@@ -2611,7 +2611,7 @@ Socket_recv(Socket *self, PyObject *args, PyObject *kwds)
     if (!PyArg_ParseTupleAndKeywords(args, kwds, "l|I:recv", kwlist,
                                      &requested_amount, &timeout))
         return NULL;
-    
+
     return _recv(self, requested_amount, timeout);
 }
 
@@ -3127,7 +3127,7 @@ the corresponding Socket in poll_descs.\n\
 ");
 
 static PyObject *
-Socket_poll(Socket *unused_class, PyObject *args)
+Socket_poll(Socket *self, PyObject *args)
 {
     PyObject *py_descs = NULL;
     PyObject *return_value = NULL;
@@ -3224,7 +3224,7 @@ communication.\n\
 ");
 
 static PyObject *
-Socket_import_tcp_socket(Socket *unused_class, PyObject *args)
+Socket_import_tcp_socket(Socket *self, PyObject *args)
 {
     int osfd;
     PRFileDesc *sock;
@@ -3242,7 +3242,7 @@ Socket_import_tcp_socket(Socket *unused_class, PyObject *args)
     Py_BEGIN_ALLOW_THREADS
     if (PR_GetSockName(sock, &addr) != PR_SUCCESS) {
         Py_BLOCK_THREADS
-	return_value = set_nspr_error(NULL);
+	set_nspr_error(NULL);
 	goto error;
     }
     Py_END_ALLOW_THREADS
@@ -3378,7 +3378,7 @@ Socket_init(Socket *self, PyObject *args, PyObject *kwds)
         if (PyErr_WarnEx(PyExc_DeprecationWarning,
                          "Socket initialization will require family parameter in future, default family parameter of PR_AF_INET is deprecated. Suggest using the family property of the NetworkAddress object associated with the socket, e.g. Socket(net_addr.family)", 1) < 0)
             return -1;
-        
+
     }
 
     /* If reinitializing, first close down previous socket */

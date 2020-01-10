@@ -5,19 +5,21 @@
 %global build_api_doc 1
 
 Name:           python-nss
-Version:        0.13
+Version:        0.16.0
 Release:        1%{?dist}
 Summary:        Python bindings for Network Security Services (NSS)
 
 Group:          Development/Languages
 License:        MPLv2.0 or GPLv2+ or LGPLv2+
 URL:            ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss
-Source0:        ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss/releases/PYNSS_RELEASE_0_13_0/src/python-nss-%{version}.tar.bz2
+Source0:        ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss/releases/PYNSS_RELEASE_0_16_0/src/python-nss-%{version}.tar.bz2
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
-%global docdir %{_docdir}/%{name}-%{version}
+Patch1: nss-version.patch
+Patch2: doc-manifest.patch
+Patch3: gcc-pragma.patch
 
-Patch1: python-nss-size_t.patch
+%global docdir %{_docdir}/%{name}-%{version}
 
 # We don't want to provide private python extension libs
 %{?filter_setup:
@@ -52,7 +54,9 @@ API documentation and examples
 
 %prep
 %setup -q
-%patch1 -p1 -b size_t
+%patch1 -p1 -b .nss-version
+%patch2 -p1 -b .doc-manifest
+%patch3 -p1 -b .gcc-pragma
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing" %{__python} setup.py build
@@ -94,6 +98,11 @@ rm -rf $RPM_BUILD_ROOT
 %endif
 
 %changelog
+* Wed Feb 18 2015 John Dennis <jdennis@redhat.com> - 0.16-1
+- Resolves: #1154776  Add API call for SSL_VersionRangeSet (rebase)
+- See doc/Changelog for details concerning changes in versions
+  0.14, 0.15, and 0.16 which this rebase encompasses.
+
 * Fri Jan  4 2013 John Dennis <jdennis@redhat.com> - 0.13-1
 - Resolves: #642795
   add python-nss-size_t.patch, some types involved with ssize_t were

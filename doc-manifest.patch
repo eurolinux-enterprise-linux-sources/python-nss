@@ -1,0 +1,17 @@
+diff -r 46403a1eb970 setup.py
+--- a/setup.py	Mon Nov 17 12:03:05 2014 -0500
++++ b/setup.py	Tue Jan 06 09:28:14 2015 -0500
+@@ -21,9 +21,11 @@
+ 
+ doc_manifest = [
+     [['include README LICENSE* doc/ChangeLog',
+-      'recursive-include doc *.py *.txt',],
++      'recursive-include doc *.py *.txt',
++      'prune doc/examples/pki'],
+      [('^doc/', '')], None],
+-    [['recursive-include test *.py *.txt',],
++    [['recursive-include test run_tests setup_certs.py test_*.py util.py *.txt',
++      'prune test/pki'],
+      None , None],
+     [['recursive-include lib *.py *.txt',],
+      [('^lib/', '')] , 'examples'],

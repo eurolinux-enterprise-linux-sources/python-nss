@@ -20,20 +20,6 @@
 
 /* ========================================================================== */
 
-typedef enum RepresentationKindEnum {
-    AsObject,
-    AsString,
-    AsTypeString,
-    AsTypeEnum,
-    AsLabeledString,
-    AsEnum,
-    AsEnumName,
-    AsEnumDescription,
-    AsIndex,
-    AsDottedDecimal,
-} RepresentationKind;
-
-
 /* ========================================================================== */
 /* =============================== SecItem Class ============================ */
 /* ========================================================================== */
@@ -53,6 +39,7 @@ typedef enum SECItemKindEnum {
     SECITEM_oid,
     SECITEM_utf8_string,
     SECITEM_bit_string,
+    SECITEM_certificate,
 } SECItemKind;
 
 typedef struct {
@@ -284,6 +271,25 @@ typedef struct {
 } CRLDistributionPts;
 
 /* ========================================================================== */
+/* ========================== AuthorityInfoAccess Class ===================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    PRArenaPool *arena;
+    CERTAuthInfoAccess *aia;
+} AuthorityInfoAccess;
+
+/* ========================================================================== */
+/* ========================= AuthorityInfoAccesses Class ==================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    PyObject *py_aias;
+} AuthorityInfoAccesses;
+
+/* ========================================================================== */
 /* ============================== AuthKeyID Class =========================== */
 /* ========================================================================== */
 
@@ -303,6 +309,19 @@ typedef struct {
 } BasicConstraints;
 
 /* ========================================================================== */
+/* ============================= CertAttribute Class ======================== */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    PRArenaPool *arena;
+    CERTAttribute attr;
+    SECOidTag oid_tag;
+    Py_ssize_t n_values;
+    CERTCertExtension **extensions;   /* null terminated array of SECItems */
+} CertAttribute;
+
+/* ========================================================================== */
 /* ========================= CertificateRequest Class ======================= */
 /* ========================================================================== */
 
@@ -311,6 +330,7 @@ typedef struct {
     PRArenaPool *arena;
     CERTSignedData signed_data;
     CERTCertificateRequest *cert_req;
+    CERTCertExtension **extensions;   /* null terminated array of SECItems */
 } CertificateRequest;
 
 /* ========================================================================== */
@@ -351,9 +371,28 @@ typedef struct {
 
 typedef struct {
     PyObject_HEAD
+    SECItem *ucs2_password_item;
     SEC_PKCS12DecoderContext *decoder_ctx;
     PyObject *py_decode_items;    /* tuple */
 } PKCS12Decoder;
+
+/* ========================================================================== */
+/* ========================== CertVerifyLogNode Class ======================= */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    CERTVerifyLogNode node;
+} CertVerifyLogNode;
+
+/* ========================================================================== */
+/* ============================ CertVerifyLog Class ========================= */
+/* ========================================================================== */
+
+typedef struct {
+    PyObject_HEAD
+    CERTVerifyLog log;
+} CertVerifyLog;
 
 /* ========================================================================== */
 
@@ -363,11 +402,32 @@ typedef struct {
     PyTypeObject *certificate_type;
     PyTypeObject *private_key_type;
     PyTypeObject *sec_item_type;
-    PyObject *(*Certificate_new_from_CERTCertificate)(CERTCertificate *cert);
+    PyObject *(*Certificate_new_from_CERTCertificate)(CERTCertificate *cert, bool add_reference);
     PyObject *(*PrivateKey_new_from_SECKEYPrivateKey)(SECKEYPrivateKey *private_key);
     PyObject *(*SecItem_new_from_SECItem)(const SECItem *item, SECItemKind type);
     PyObject *(*cert_distnames_new_from_CERTDistNames)(CERTDistNames *names);
     CERTDistNames *(*cert_distnames_as_CERTDistNames)(PyObject *py_distnames);
+    int (*_AddIntConstantWithLookup)(PyObject *module,
+                                     const char *name, long value,
+                                     const char *prefix,
+                                     PyObject *name_to_value,
+                                     PyObject *value_to_name);
+    int (*_AddIntConstantAlias)(const char *name, long value,
+                                PyObject *name_to_value);
+    PyObject *(*format_from_lines)(format_lines_func formatter, PyObject *self,
+                                   PyObject *args, PyObject *kwds);
+    PyObject *(*line_fmt_tuple)(int level, const char *label,
+                                PyObject *py_value);
+    PyObject *(*obj_sprintf)(const char *fmt, ...);
+    PyObject *(*obj_to_hex)(PyObject *obj,
+                            int octets_per_line, char *separator);
+    PyObject *(*raw_data_to_hex)(unsigned char *data, int data_len,
+                                 int octets_per_line, char *separator);
+    PyObject *(*fmt_label)(int level, char *label);
+    PyObject *(*timestamp_to_DateTime)(time_t timestamp, bool utc);
+
+
+
 } PyNSPR_NSS_C_API_Type;
 
 #ifdef NSS_NSS_MODULE
@@ -402,6 +462,15 @@ static PyNSPR_NSS_C_API_Type nspr_nss_c_api;
 #define SecItem_new_from_SECItem (*nspr_nss_c_api.SecItem_new_from_SECItem)
 #define cert_distnames_new_from_CERTDistNames (*nspr_nss_c_api.cert_distnames_new_from_CERTDistNames)
 #define cert_distnames_as_CERTDistNames (*nspr_nss_c_api.cert_distnames_as_CERTDistNames)
+#define _AddIntConstantWithLookup (*nspr_nss_c_api._AddIntConstantWithLookup)
+#define _AddIntConstantAlias (*nspr_nss_c_api._AddIntConstantAlias)
+#define format_from_lines (*nspr_nss_c_api.format_from_lines)
+#define line_fmt_tuple (*nspr_nss_c_api.line_fmt_tuple)
+#define obj_sprintf (*nspr_nss_c_api.obj_sprintf)
+#define obj_to_hex (*nspr_nss_c_api.obj_to_hex)
+#define raw_data_to_hex (*nspr_nss_c_api.raw_data_to_hex)
+#define fmt_label (*nspr_nss_c_api.fmt_label)
+#define timestamp_to_DateTime (*nspr_nss_c_api.timestamp_to_DateTime)
 
 static int
 import_nspr_nss_c_api(void)

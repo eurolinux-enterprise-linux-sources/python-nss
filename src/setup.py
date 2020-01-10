@@ -17,7 +17,7 @@ from distutils.util import subst_vars, change_root
 from distutils.command.build_py import build_py as _build_py
 from distutils.command.sdist import sdist as _sdist
 
-version = "0.13"
+version = "0.16.0"
 
 doc_manifest = [
     [['include README LICENSE* doc/ChangeLog',
@@ -306,17 +306,20 @@ class InstallDoc(Command):
 
 def main(argv):
 
-    long_description='''
-    Python bindings for Network Security Services (NSS) and Netscape Portable Runtime (NSPR).
-    '''
+    with open('README') as f:
+        long_description = f.read()
 
     debug_compile_args = ['-O0', '-g']
     extra_compile_args = []
 
-    for arg in argv:
+    for arg in argv[:]:
         if arg in ('-d', '--debug'):
             print "compiling with debug"
-            extra_compile_args = debug_compile_args
+            extra_compile_args += debug_compile_args
+            argv.remove(arg)
+        if arg in ('-t', '--trace'):
+            print "compiling with trace"
+            extra_compile_args += ['-DDEBUG']
             argv.remove(arg)
 
     nss_include_dir  = find_include_dir(['nss3', 'nss'],   ['nss.h',  'pk11pub.h'])
@@ -326,7 +329,8 @@ def main(argv):
         Extension('nss.error',
                   sources            = ['src/py_nspr_error.c'],
                   include_dirs       = [nss_include_dir, nspr_include_dir],
-                  depends            = ['src/py_nspr_common.h', 'src/py_nspr_error.h'],
+                  depends            = ['src/py_nspr_common.h', 'src/py_nspr_error.h',
+                                         'src/NSPRerrs.h', 'src/SSLerrs.h', 'src/SECerrs.h'],
                   libraries          = ['nspr4'],
                   extra_compile_args = extra_compile_args,
                   )
@@ -369,7 +373,7 @@ def main(argv):
           author_email     = 'jdennis@redhat.com',
           maintainer       = 'John Dennis',
           maintainer_email = 'jdennis@redhat.com',
-          license          = 'MPLv1.1 or GPLv2+ or LGPLv2+',
+          license          = 'MPLv2.0 or GPLv2+ or LGPLv2+',
           platforms        = 'posix',
           url              = 'http://www.mozilla.org/projects/security/pki/python-nss',
           download_url     = '',

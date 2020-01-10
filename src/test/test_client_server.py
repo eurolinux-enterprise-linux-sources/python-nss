@@ -25,14 +25,13 @@ info = False
 password = 'db_passwd'
 use_ssl = True
 client_cert_action = NO_CLIENT_CERT
-certdir = os.path.join(os.path.dirname(sys.argv[0]), 'pki')
+db_name = 'sql:pki'
 hostname = os.uname()[1]
 server_nickname = 'test_server'
 client_nickname = 'test_user'
 port = 1234
-timeout_secs = 3
-family = io.PR_AF_INET
-sleep_time = 1
+timeout_secs = 10
+sleep_time = 5
 
 
 # -----------------------------------------------------------------------------
@@ -44,7 +43,14 @@ def password_callback(slot, retry, password):
     return getpass.getpass("Enter password: ");
 
 def handshake_callback(sock):
-    if verbose: print "handshake complete, peer = %s" % (sock.get_peer_name())
+    if verbose:
+        print "-- handshake complete --"
+        print "peer: %s" % (sock.get_peer_name())
+        print "negotiated host: %s" % (sock.get_negotiated_host())
+        print
+        print sock.connection_info_str()
+        print "-- handshake complete --"
+        print
 
 def auth_certificate_callback(sock, check_sig, is_server, certdb):
     if verbose: print "auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server)
@@ -142,7 +148,6 @@ def client(request):
         if info: print "client: using SSL"
         ssl.set_domestic_policy()
 
-    valid_addr = False
     # Get the IP Address of our server
     try:
         addr_info = io.AddrInfo(hostname)
@@ -151,8 +156,6 @@ def client(request):
         return
 
     for net_addr in addr_info:
-        if family != io.PR_AF_UNSPEC:
-            if net_addr.family != family: continue
         net_addr.port = port
 
         if use_ssl:
@@ -180,26 +183,21 @@ def client(request):
             if verbose: print "client trying connection to: %s" % (net_addr)
             sock.connect(net_addr, timeout=io.seconds_to_interval(timeout_secs))
             if verbose: print "client connected to: %s" % (net_addr)
-            valid_addr = True
             break
         except Exception, e:
             sock.close()
             print >>sys.stderr, "client: connection to: %s failed (%s)" % (net_addr, e)
 
-    if not valid_addr:
-        print >>sys.stderr, "Could not establish valid address for \"%s\" in family %s" % \
-        (hostname, io.addr_family_name(family))
-        return
-
     # Talk to the server
     try:
         if info: print "client: sending \"%s\"" % (request)
-        sock.send(request)
-        buf = sock.recv(1024)
+        sock.send(request + '\n') # newline is protocol record separator
+        buf = sock.readline()
         if not buf:
             print >>sys.stderr, "client: lost connection"
             sock.close()
             return
+        buf = buf.rstrip()        # remove newline record separator
         if info: print "client: received \"%s\"" % (buf)
     except Exception, e:
         print >>sys.stderr, "client: %s" % e
@@ -228,15 +226,11 @@ def client(request):
 # -----------------------------------------------------------------------------
 
 def server():
-    global family
-
     if verbose: print "starting server:"
 
     # Initialize
     # Setup an IP Address to listen on any of our interfaces
-    if family == io.PR_AF_UNSPEC:
-        family = io.PR_AF_INET
-    net_addr = io.NetworkAddress(io.PR_IpAddrAny, port, family)
+    net_addr = io.NetworkAddress(io.PR_IpAddrAny, port)
 
     if use_ssl:
         if info: print "server: using SSL"
@@ -290,15 +284,16 @@ def server():
         while True:
             try:
                 # Handle the client connection
-                buf = client_sock.recv(1024)
+                buf = client_sock.readline()   # newline is protocol record separator
                 if not buf:
                     print >>sys.stderr, "server: lost lost connection to %s" % (client_addr)
                     break
+                buf = buf.rstrip()             # remove newline record separator
 
                 if info: print "server: received \"%s\"" % (buf)
-                reply = "{%s}" % buf # echo
+                reply = "{%s}" % buf           # echo embedded inside braces
                 if info: print "server: sending \"%s\"" % (reply)
-                client_sock.send(reply) # echo
+                client_sock.send(reply + '\n') # send echo with record separator
 
                 time.sleep(sleep_time)
                 client_sock.shutdown()
@@ -320,7 +315,7 @@ def server():
 def run_server():
     pid = os.fork()
     if pid == 0:
-        nss.nss_init(certdir)
+        nss.nss_init(db_name)
         server()
         nss.nss_shutdown()
     time.sleep(sleep_time)
@@ -348,7 +343,7 @@ class TestSSL(unittest.TestCase):
 
     def test_ssl(self):
         request = "foo"
-        nss.nss_init(certdir)
+        nss.nss_init(db_name)
         reply = client(request)
         nss.nss_shutdown()
         self.assertEqual("{%s}" % request, reply)

@@ -4,6 +4,22 @@
 
 //#define DEBUG
 
+typedef PyObject *(*format_lines_func)(PyObject *self, PyObject *args, PyObject *kwds);
+
+typedef enum RepresentationKindEnum {
+    AsObject,
+    AsString,
+    AsTypeString,
+    AsTypeEnum,
+    AsLabeledString,
+    AsEnum,
+    AsEnumName,
+    AsEnumDescription,
+    AsIndex,
+    AsDottedDecimal,
+} RepresentationKind;
+
+
 #ifndef MIN
 #define MIN(a,b) ((a) < (b) ? (a) : (b))
 #endif
@@ -35,6 +51,107 @@ do {                                            \
     Py_CLEAR(tmp);                              \
 } while (0)
 
+
+/******************************************************************************/
+
+#define OCTETS_PER_LINE_DEFAULT 16
+#define HEX_SEPARATOR_DEFAULT ":"
+
+#define FMT_OBJ_AND_APPEND(dst_fmt_tuples, label, src_obj, level, fail) \
+{                                                                       \
+    PyObject *fmt_tuple = NULL;                                         \
+                                                                        \
+    if ((fmt_tuple = line_fmt_tuple(level, label, src_obj)) == NULL) {  \
+        goto fail;                                                      \
+    }                                                                   \
+    if (PyList_Append(dst_fmt_tuples, fmt_tuple) != 0) {                \
+        Py_DECREF(fmt_tuple);                                           \
+        goto fail;                                                      \
+    }                                                                   \
+}
+
+#define FMT_LABEL_AND_APPEND(dst_fmt_tuples, label, level, fail)        \
+{                                                                       \
+    PyObject *fmt_tuple = NULL;                                         \
+                                                                        \
+    if ((fmt_tuple = fmt_label(level, label)) == NULL) {                \
+        goto fail;                                                      \
+    }                                                                   \
+    if (PyList_Append(dst_fmt_tuples, fmt_tuple) != 0) {                \
+        Py_DECREF(fmt_tuple);                                           \
+        goto fail;                                                      \
+    }                                                                   \
+}
+
+#define APPEND_LINE_TUPLES_AND_CLEAR(dst_fmt_tuples, src_fmt_tuples, fail) \
+{                                                                       \
+    PyObject *src_obj;                                                  \
+    Py_ssize_t len, i;                                                  \
+    if (src_fmt_tuples) {                                               \
+        len = PyList_Size(src_fmt_tuples);                              \
+        for (i = 0; i < len; i++) {                                     \
+            src_obj = PyList_GetItem(src_fmt_tuples, i);                \
+            PyList_Append(dst_fmt_tuples, src_obj);                     \
+        }                                                               \
+        Py_CLEAR(src_fmt_tuples);                                       \
+    }                                                                   \
+}
+
+#define APPEND_LINES_AND_CLEAR(dst_fmt_tuples, src_lines, level, fail)  \
+{                                                                       \
+    PyObject *src_obj;                                                  \
+    Py_ssize_t len, i;                                                  \
+    if (src_lines) {                                                    \
+        len = PySequence_Size(src_lines);                               \
+        for (i = 0; i < len; i++) {                                     \
+            src_obj = PySequence_GetItem(src_lines, i);                 \
+            FMT_OBJ_AND_APPEND(dst_fmt_tuples, NULL, src_obj, level, fail); \
+            Py_DECREF(src_obj);                                         \
+        }                                                               \
+        Py_CLEAR(src_lines);                                            \
+    }                                                                   \
+}
+
+#define CALL_FORMAT_LINES_AND_APPEND(dst_fmt_tuples, obj, level, fail)  \
+{                                                                       \
+    PyObject *obj_line_fmt_tuples;                                      \
+                                                                        \
+    if ((obj_line_fmt_tuples =                                          \
+         PyObject_CallMethod(obj, "format_lines",                       \
+                             "(i)", level)) == NULL) {                  \
+        goto fail;                                                      \
+    }                                                                   \
+                                                                        \
+    APPEND_LINE_TUPLES_AND_CLEAR(dst_fmt_tuples, obj_line_fmt_tuples, fail); \
+}
+
+
+#define APPEND_OBJ_TO_HEX_LINES_AND_CLEAR(dst_fmt_tuples, obj, level, fail) \
+{                                                                       \
+    PyObject *obj_lines;                                                \
+                                                                        \
+    if ((obj_lines = obj_to_hex(obj, OCTETS_PER_LINE_DEFAULT,           \
+                                HEX_SEPARATOR_DEFAULT)) == NULL) {      \
+        goto fail;                                                      \
+    }                                                                   \
+    Py_CLEAR(obj);                                                      \
+    APPEND_LINES_AND_CLEAR(dst_fmt_tuples, obj_lines, level, fail);     \
+}
+
+#define FMT_SEC_INT_OBJ_APPEND_AND_CLEAR(dst_fmt_tuples, label, obj, level, fail) \
+{                                                                       \
+    PyObject *obj_lines = NULL;                                         \
+    SecItem *item = (SecItem *)obj;                                     \
+                                                                        \
+    FMT_LABEL_AND_APPEND(dst_fmt_tuples, label, level, fail);           \
+    if ((obj_lines = secitem_integer_format_lines(&item->item, level+1)) == NULL) { \
+        goto fail;                                                      \
+    }                                                                   \
+    Py_CLEAR(obj);                                                      \
+    APPEND_LINE_TUPLES_AND_CLEAR(dst_fmt_tuples, obj_lines, fail);      \
+}
+
+/******************************************************************************/
 
 // Gettext
 #ifndef _
@@ -68,6 +185,8 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 
 #define PyNone_Check(x) ((x) == Py_None)
 
+#define CALL_BASE(type, func, ...) (type)->tp_base->tp_##func(__VA_ARGS__)
+
 #define TYPE_READY(type)                                                \
 {                                                                       \
     if (PyType_Ready(&type) < 0)                                        \
@@ -76,7 +195,41 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
     PyModule_AddObject(m, rindex(type.tp_name, '.')+1, (PyObject *)&type); \
 }
 
-#define AddIntConstant(c) if (PyModule_AddIntConstant(m, #c, c) < 0) return;
+#define AddIntConstant(c)                                               \
+{                                                                       \
+    PyObject *dict;                                                     \
+                                                                        \
+                                                                        \
+    if ((dict = PyModule_GetDict(m)) == NULL) {                         \
+        PyErr_Format(PyExc_SystemError, "module '%s' has no __dict__",  \
+                     PyModule_GetName(m));                              \
+        return;                                                         \
+    }                                                                   \
+    if (PyDict_GetItemString(dict, #c)) {                               \
+        PyErr_Format(PyExc_SystemError, "module '%s' already contains %s", \
+                         PyModule_GetName(m), #c);                      \
+        return;                                                         \
+    }                                                                   \
+    if (PyModule_AddIntConstant(m, #c, c) < 0) return;                  \
+}
+
+#define AddIntConstantName(name, c)                                     \
+{                                                                       \
+    PyObject *dict;                                                     \
+                                                                        \
+                                                                        \
+    if ((dict = PyModule_GetDict(m)) == NULL) {                         \
+        PyErr_Format(PyExc_SystemError, "module '%s' has no __dict__",  \
+                     PyModule_GetName(m));                              \
+        return;                                                         \
+    }                                                                   \
+    if (PyDict_GetItemString(dict, #c)) {                               \
+        PyErr_Format(PyExc_SystemError, "module '%s' already contains %s", \
+                         PyModule_GetName(m), #c);                      \
+        return;                                                         \
+    }                                                                   \
+    if (PyModule_AddIntConstant(m, #name, c) < 0) return;               \
+}
 
 #ifdef DEBUG
 
@@ -146,4 +299,3 @@ typedef PyObject *(*ssizessizeargfunc)(PyObject *, Py_ssize_t, Py_ssize_t);
 #define TraceObjNewEnter(_tp)
 #define TraceObjNewLeave(_obj)
 #endif
-
