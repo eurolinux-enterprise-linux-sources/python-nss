@@ -66,18 +66,6 @@ should not be used, they will be removed in a subsequent release.
     not respected, port will be value when `HostEntry` object was
     created.
 
-`ssl.nssinit()`
-    nssinit has been moved to the nss module, use `nss.nss_init()`
-    instead of ssl.nssinit
-
-`ssl.nss_init()`
-    nss_init has been moved to the nss module, use `nss.nss_init()`
-    instead of ssl.nssinit
-
-`ssl.nss_shutdown()`
-    nss_shutdown() has been moved to the nss module, use
-    `nss.nss_shutdown()` instead of ssl.nss_shutdown()
-
 `io.Socket()` and `ssl.SSLSocket()` without explicit family parameter
     Socket initialization will require the family parameter in the future.
     The default family parameter of PR_AF_INET is deprecated because
@@ -163,8 +151,8 @@ Things All NSS programs must do
 
 - Initialize NSS and indicate the certficate database (CertDB)::
 
-    certdir = './pki'
-    ssl.nssinit(certdir)
+    db_name = 'sql:pki'
+    ssl.nssinit(db_name)
 
 - If you are implementing an SSL server call config_secure_server()
   (see ssl_example.py)::
@@ -244,7 +232,7 @@ Issues
     future we can find a solution but the immediate goal of the NSS
     Python binding was to expose NSS through Python, not necessarily
     to solve the larger integration issue of Python run-time and NSPR
-    run-time. 
+    run-time.
 
     - NSPR would like to hide the underlying platform socket (in the
       NSPR code this is called "osfd"). There are NSPR API's which
@@ -312,5 +300,4 @@ FAQ
 To be added
 
 """
-__version__ = '0.14.0'
-
+__version__ = '0.16.0'

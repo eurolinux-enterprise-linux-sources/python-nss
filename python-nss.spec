@@ -5,18 +5,17 @@
 %global build_api_doc 1
 
 Name:           python-nss
-Version:        0.14.0
-Release:        5%{?dist}
+Version:        0.16.0
+Release:        2%{?dist}
 Summary:        Python bindings for Network Security Services (NSS)
 
 Group:          Development/Languages
 License:        MPLv2.0 or GPLv2+ or LGPLv2+
 URL:            ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss
-Source0:        ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss/releases/PYNSS_RELEASE_0_14_0/src/python-nss-%{version}.tar.bz2
+Source0:        ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss/releases/PYNSS_RELEASE_0_16_0/src/python-nss-%{version}.tar.bz2
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
-Patch1: python-nss-0.14.1.patch
-
+Patch1: nss-version.patch
 
 %global docdir %{_docdir}/%{name}-%{version}
 
@@ -53,7 +52,7 @@ API documentation and examples
 
 %prep
 %setup -q
-%patch1 -p1 -b .0.14.1
+%patch1 -p1 -b .nss-version
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing" %{__python} setup.py build
@@ -95,6 +94,220 @@ rm -rf $RPM_BUILD_ROOT
 %endif
 
 %changelog
+* Tue Nov 25 2014 John Dennis <jdennis@redhat.com> - 0.16.0-2
+- Remove the TLS 1.3 symbols from ssl_version_range.py example
+  because RHEL only has NSS 3.16.
+
+* Mon Nov 24 2014 John Dennis <jdennis@redhat.com> - 0.16.0-1
+- resolves: bug#1155703 - Add API call for SSL_VersionRangeSet (rebase)
+  rebased to 0.16.0
+- The primary enhancements in this version is adding support for the
+  setting trust attributes on a Certificate, the SSL version range API,
+  information on the SSL cipher suites and information on the SSL connection.
+
+  * The following module functions were added:
+
+    - ssl.get_ssl_version_from_major_minor
+    - ssl.get_default_ssl_version_range
+    - ssl.get_supported_ssl_version_range
+    - ssl.set_default_ssl_version_range
+    - ssl.ssl_library_version_from_name
+    - ssl.ssl_library_version_name
+    - ssl.get_cipher_suite_info
+    - ssl.ssl_cipher_suite_name
+    - ssl.ssl_cipher_suite_from_name
+
+  * The following deprecated module functions were removed:
+
+    - ssl.nssinit
+    - ssl.nss_ini
+    - ssl.nss_shutdown
+
+  * The following classes were added:
+
+    - SSLCipherSuiteInfo
+    - SSLChannelInfo
+
+  * The following class methods were added:
+
+    - Certificate.trust_flags
+    - Certificate.set_trust_attributes
+
+    - SSLSocket.set_ssl_version_range
+    - SSLSocket.get_ssl_version_range
+    - SSLSocket.get_ssl_channel_info
+    - SSLSocket.get_negotiated_host
+    - SSLSocket.connection_info_format_lines
+    - SSLSocket.connection_info_format
+    - SSLSocket.connection_info_str
+	
+    - SSLCipherSuiteInfo.format_lines
+    - SSLCipherSuiteInfo.format
+
+    - SSLChannelInfo.format_lines
+    - SSLChannelInfo.format
+
+  * The following class properties were added:
+
+    - Certificate.ssl_trust_flags
+    - Certificate.email_trust_flags
+    - Certificate.signing_trust_flags
+
+    - SSLCipherSuiteInfo.cipher_suite
+    - SSLCipherSuiteInfo.cipher_suite_name
+    - SSLCipherSuiteInfo.auth_algorithm
+    - SSLCipherSuiteInfo.auth_algorithm_name
+    - SSLCipherSuiteInfo.kea_type
+    - SSLCipherSuiteInfo.kea_type_name
+    - SSLCipherSuiteInfo.symmetric_cipher
+    - SSLCipherSuiteInfo.symmetric_cipher_name
+    - SSLCipherSuiteInfo.symmetric_key_bits
+    - SSLCipherSuiteInfo.symmetric_key_space
+    - SSLCipherSuiteInfo.effective_key_bits
+    - SSLCipherSuiteInfo.mac_algorithm
+    - SSLCipherSuiteInfo.mac_algorithm_name
+    - SSLCipherSuiteInfo.mac_bits
+    - SSLCipherSuiteInfo.is_fips
+    - SSLCipherSuiteInfo.is_exportable
+    - SSLCipherSuiteInfo.is_nonstandard
+
+    - SSLChannelInfo.protocol_version
+    - SSLChannelInfo.protocol_version_str
+    - SSLChannelInfo.protocol_version_enum
+    - SSLChannelInfo.major_protocol_version
+    - SSLChannelInfo.minor_protocol_version
+    - SSLChannelInfo.cipher_suite
+    - SSLChannelInfo.auth_key_bits
+    - SSLChannelInfo.kea_key_bits
+    - SSLChannelInfo.creation_time
+    - SSLChannelInfo.creation_time_utc
+    - SSLChannelInfo.last_access_time
+    - SSLChannelInfo.last_access_time_utc
+    - SSLChannelInfo.expiration_time
+    - SSLChannelInfo.expiration_time_utc
+    - SSLChannelInfo.compression_method
+    - SSLChannelInfo.compression_method_name
+    - SSLChannelInfo.session_id
+
+  * The following files were added:
+
+    - doc/examples/cert_trust.py
+    - doc/examples/ssl_version_range.py
+
+  * The following constants were added:
+    - nss.CERTDB_TERMINAL_RECORD
+    - nss.CERTDB_VALID_PEER
+    - nss.CERTDB_TRUSTED
+    - nss.CERTDB_SEND_WARN
+    - nss.CERTDB_VALID_CA
+    - nss.CERTDB_TRUSTED_CA
+    - nss.CERTDB_NS_TRUSTED_CA
+    - nss.CERTDB_USER
+    - nss.CERTDB_TRUSTED_CLIENT_CA
+    - nss.CERTDB_GOVT_APPROVED_CA
+    - ssl.SRTP_AES128_CM_HMAC_SHA1_32
+    - ssl.SRTP_AES128_CM_HMAC_SHA1_80
+    - ssl.SRTP_NULL_HMAC_SHA1_32
+    - ssl.SRTP_NULL_HMAC_SHA1_80
+    - ssl.SSL_CK_DES_192_EDE3_CBC_WITH_MD5
+    - ssl.SSL_CK_DES_64_CBC_WITH_MD5
+    - ssl.SSL_CK_IDEA_128_CBC_WITH_MD5
+    - ssl.SSL_CK_RC2_128_CBC_EXPORT40_WITH_MD5
+    - ssl.SSL_CK_RC2_128_CBC_WITH_MD5
+    - ssl.SSL_CK_RC4_128_EXPORT40_WITH_MD5
+    - ssl.SSL_CK_RC4_128_WITH_MD5
+    - ssl.SSL_FORTEZZA_DMS_WITH_FORTEZZA_CBC_SHA
+    - ssl.SSL_FORTEZZA_DMS_WITH_NULL_SHA
+    - ssl.SSL_FORTEZZA_DMS_WITH_RC4_128_SHA
+    - ssl.SSL_RSA_OLDFIPS_WITH_3DES_EDE_CBC_SHA
+    - ssl.SSL_RSA_OLDFIPS_WITH_DES_CBC_SHA
+    - ssl.TLS_DHE_DSS_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_DHE_DSS_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DHE_DSS_WITH_DES_CBC_SHA
+    - ssl.TLS_DHE_RSA_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_DHE_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_DHE_RSA_WITH_AES_256_CBC_SHA256
+    - ssl.TLS_DHE_RSA_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DHE_RSA_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_ANON_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_ANON_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_DSS_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_DSS_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_RSA_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_RSA_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_anon_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_DH_anon_EXPORT_WITH_RC4_40_MD5
+    - ssl.TLS_DH_anon_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_AES_128_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_AES_256_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_DES_CBC_SHA
+    - ssl.TLS_DH_anon_WITH_RC4_128_MD5
+    - ssl.TLS_ECDHE_ECDSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_ECDHE_ECDSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_ECDHE_RSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_ECDHE_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_ECDH_ECDSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_ECDH_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_EMPTY_RENEGOTIATION_INFO_SCSV
+    - ssl.TLS_FALLBACK_SCSV
+    - ssl.TLS_NULL_WITH_NULL_NULL
+    - ssl.TLS_RSA_EXPORT_WITH_DES40_CBC_SHA
+    - ssl.TLS_RSA_EXPORT_WITH_RC2_CBC_40_MD5
+    - ssl.TLS_RSA_EXPORT_WITH_RC4_40_MD5
+    - ssl.TLS_RSA_WITH_3DES_EDE_CBC_SHA
+    - ssl.TLS_RSA_WITH_AES_128_CBC_SHA256
+    - ssl.TLS_RSA_WITH_AES_128_GCM_SHA256
+    - ssl.TLS_RSA_WITH_AES_256_CBC_SHA256
+    - ssl.TLS_RSA_WITH_CAMELLIA_128_CBC_SHA
+    - ssl.TLS_RSA_WITH_CAMELLIA_256_CBC_SHA
+    - ssl.TLS_RSA_WITH_DES_CBC_SHA
+    - ssl.TLS_RSA_WITH_IDEA_CBC_SHA
+    - ssl.TLS_RSA_WITH_NULL_MD5
+    - ssl.TLS_RSA_WITH_NULL_SHA
+    - ssl.TLS_RSA_WITH_NULL_SHA256
+    - ssl.TLS_RSA_WITH_RC4_128_MD5
+    - ssl.TLS_RSA_WITH_RC4_128_SHA
+    - ssl.TLS_RSA_WITH_SEED_CBC_SHA
+    - ssl.SSL_VARIANT_DATAGRAM
+    - ssl.SSL_VARIANT_STREAM
+    - ssl.SSL_LIBRARY_VERSION_2
+    - ssl.SSL_LIBRARY_VERSION_3_0
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_0
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_1
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_2
+    - ssl.SSL_LIBRARY_VERSION_TLS_1_3
+    - ssl.ssl2
+    - ssl.ssl3
+    - ssl.tls1.0
+    - ssl.tls1.1
+    - ssl.tls1.2
+    - ssl.tls1.3
+
+   * The following methods were missing thread locks, this has been fixed.
+
+     - nss.nss_initialize
+     - nss.nss_init_context
+     - nss.nss_shutdown_context
+
+* Mon Jun 16 2014 John Dennis <jdennis@redhat.com> - 0.15.0-1
+- resolves: bug#1109769 rebase to 0.15.0
+- includes fixes for 1087031 and 1060314
+  See doc/Changelog for details
+
 * Fri Jan 24 2014 Daniel Mach <dmach@redhat.com> - 0.14.0-5
 - Mass rebuild 2014-01-24
 

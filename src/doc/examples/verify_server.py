@@ -4,10 +4,10 @@
 # License, v. 2.0. If a copy of the MPL was not distributed with this
 # file, You can obtain one at http://mozilla.org/MPL/2.0/.
 
+import argparse
+import getpass
 import os
 import sys
-import getopt
-import getpass
 
 from nss.error import NSPRError
 import nss.io as io
@@ -16,11 +16,6 @@ import nss.ssl as ssl
 
 # -----------------------------------------------------------------------------
 
-# command line parameters, default them to something reasonable
-#certdir = '/etc/httpd/alias'
-certdir = '/etc/pki/nssdb'
-hostname = 'www.verisign.com'
-port = 443
 timeout_secs = 3
 
 request = '''\
@@ -32,7 +27,13 @@ GET /index.html HTTP/1.0
 # -----------------------------------------------------------------------------
 
 def handshake_callback(sock):
-    print "handshake complete, peer = %s" % (sock.get_peer_name())
+    print "-- handshake complete --"
+    print "peer: %s" % (sock.get_peer_name())
+    print "negotiated host: %s" % (sock.get_negotiated_host())
+    print
+    print sock.connection_info_str()
+    print "-- handshake complete --"
+    print
 
 def auth_certificate_callback(sock, check_sig, is_server, certdb):
     print "auth_certificate_callback: check_sig=%s is_server=%s" % (check_sig, is_server)
@@ -104,18 +105,18 @@ def client():
     valid_addr = False
     # Get the IP Address of our server
     try:
-        addr_info = io.AddrInfo(hostname)
+        addr_info = io.AddrInfo(options.hostname)
     except:
-        print "ERROR: could not resolve hostname \"%s\"" % hostname
+        print "ERROR: could not resolve hostname \"%s\"" % options.hostname
         return
 
     for net_addr in addr_info:
-        net_addr.port = port
+        net_addr.port = options.port
         sock = ssl.SSLSocket(net_addr.family)
         # Set client SSL socket options
         sock.set_ssl_option(ssl.SSL_SECURITY, True)
         sock.set_ssl_option(ssl.SSL_HANDSHAKE_AS_CLIENT, True)
-        sock.set_hostname(hostname)
+        sock.set_hostname(options.hostname)
 
         # Provide a callback which notifies us when the SSL handshake is
         # complete
@@ -135,7 +136,7 @@ def client():
             continue
 
     if not valid_addr:
-        print "ERROR: could not connect to \"%s\"" % hostname
+        print "ERROR: could not connect to \"%s\"" % options.hostname
         return
 
     try:
@@ -158,48 +159,65 @@ def client():
 
 # -----------------------------------------------------------------------------
 
-usage_str = '''
--d --certdir    certificate directory (default: %(certdir)s)
--h --hostname   host to connect to (default: %(hostname)s)
--p --port       host port (default: %(port)s)
-''' % {
-       'certdir'             : certdir,
-       'hostname'            : hostname,
-       'port'                : port,
-       }
+parser = argparse.ArgumentParser(description='certificate verification example',
+                                 formatter_class=argparse.ArgumentDefaultsHelpFormatter)
 
-def usage():
-    print usage_str
+parser.add_argument('-d', '--db-name',
+                    help='NSS database name (e.g. "sql:pki")')
 
-try:
-    opts, args = getopt.getopt(sys.argv[1:], "Hd:h:p:",
-                               ["help", "certdir=", "hostname=",
-                                "port=",
-                                ])
-except getopt.GetoptError:
-    # print help information and exit:
-    usage()
-    sys.exit(2)
+parser.add_argument('-H', '--hostname',
+                    help='host to connect to')
 
+parser.add_argument('-p', '--port', type=int,
+                    help='host port')
 
-for o, a in opts:
-    if o in ("-d", "--certdir"):
-        certdir = a
-    if o in ("-h", "--hostname"):
-        hostname = a
-    if o in ("-p", "--port"):
-        port = int(a)
-    if o in ("-H", "--help"):
-        usage()
-        sys.exit()
+parser.set_defaults(db_name = 'sql:pki',
+                    hostname = 'www.verisign.com',
+                    port = 443,
+                    )
+
+parser.add_argument('--min-ssl-version',
+                    help='minimum SSL version')
+
+parser.add_argument('--max-ssl-version',
+                    help='minimum SSL version')
+
+options = parser.parse_args()
 
 # Perform basic configuration and setup
 try:
-    nss.nss_init(certdir)
+    nss.nss_init(options.db_name)
     ssl.set_domestic_policy()
+
+    min_ssl_version, max_ssl_version = \
+        ssl.get_supported_ssl_version_range(repr_kind=nss.AsString)
+    print "Supported SSL version range: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version)
+
+    min_ssl_version, max_ssl_version = \
+        ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
+    print "Default SSL version range: min=%s, max=%s" % \
+        (min_ssl_version, max_ssl_version)
+
+    if options.min_ssl_version is not None or \
+       options.max_ssl_version is not None:
+
+        if options.min_ssl_version is not None:
+            min_ssl_version  = options.min_ssl_version
+        if options.max_ssl_version is not None:
+            max_ssl_version  = options.max_ssl_version
+
+        print "Setting default SSL version range: min=%s, max=%s" % \
+            (min_ssl_version, max_ssl_version)
+        ssl.set_default_ssl_version_range(min_ssl_version, max_ssl_version)
+
+        min_ssl_version, max_ssl_version = \
+            ssl.get_default_ssl_version_range(repr_kind=nss.AsString)
+        print "Default SSL version range now: min=%s, max=%s" % \
+            (min_ssl_version, max_ssl_version)
+
 except Exception, e:
-    print >>sys.stderr, e.strerror
+    print >>sys.stderr, str(e)
     sys.exit(1)
 
 client()
-
