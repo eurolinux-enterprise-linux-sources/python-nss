@@ -1,0 +1,26 @@
+# HG changeset patch
+# User John Dennis <jdennis@redhat.com>
+# Date 1434146562 14400
+#      Fri Jun 12 18:02:42 2015 -0400
+# Node ID 932c56dbe8dbf74ca90461770f40c4ae2c79fe62
+# Parent  6096d0660e2abefcee12e502fed029663d435c54
+SSLSocket.set_certificate_db() fails with TypeError
+
+Resolves bug
+https://bugzilla.redhat.com/show_bug.cgi?id=1230584
+
+The PyArg_ParseTuple parameters were incorrectly specified,
+it passed a type instead of a pointer to type.
+
+diff --git a/src/py_ssl.c b/src/py_ssl.c
+--- a/src/py_ssl.c
++++ b/src/py_ssl.c
+@@ -1638,7 +1638,7 @@
+ {
+     CertDB *py_certdb = NULL;
+ 
+-    if (!PyArg_ParseTuple(args, "O!:set_certificate_db", CertDBType, &py_certdb))
++    if (!PyArg_ParseTuple(args, "O!:set_certificate_db", &CertDBType, &py_certdb))
+         return NULL;
+ 
+     if (SSL_CertDBHandleSet(self->pr_socket, py_certdb->handle) != SECSuccess) {

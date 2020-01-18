@@ -1,0 +1,49 @@
+fix read_data_from_file(), make it accept any file like object
+
+read_data_from_file() was supposed to accept either a string
+representing a filename to open or a file object on which it will
+call read() to load the contents. However the test for a file object
+was too restrictive, it literally checked for a file object which
+excluded objects supporting the file interface
+(e.g. StringIO). Therefore the test was changed to test if the object
+has a read() method.
+
+diff -r -u python-nss-0.16.0.orig/src/py_nss.c python-nss-0.16.0/src/py_nss.c
+--- python-nss-0.16.0.orig/src/py_nss.c	2014-10-23 19:15:12.000000000 -0400
++++ python-nss-0.16.0/src/py_nss.c	2015-05-26 17:16:50.373886276 -0400
+@@ -1796,6 +1796,20 @@
+     return py_sec_item;
+ }
+ 
++static bool
++pyobject_has_method(PyObject* obj, const char *method_name)
++{
++    PyObject *attr;
++    int is_callable;
++
++    if ((attr = PyObject_GetAttrString(obj, method_name)) == NULL) {
++        return false;
++    }
++    is_callable = PyCallable_Check(attr);
++    Py_DECREF(attr);
++    return is_callable ? true : false;
++}
++
+ /*
+  * read_data_from_file(PyObject *file_arg)
+  *
+@@ -1819,11 +1833,11 @@
+         if ((py_file = PyFile_FromString(PyString_AsString(file_arg), "r")) == NULL) {
+             return NULL;
+         }
+-    } else if (PyFile_Check(file_arg)) {
++    } else if (pyobject_has_method(file_arg, "read")) {
+         py_file = file_arg;
+ 	Py_INCREF(py_file);
+     } else {
+-        PyErr_SetString(PyExc_TypeError, "Bad file, must be pathname or file object");
++        PyErr_SetString(PyExc_TypeError, "Bad file, must be pathname or file like object with read() method");
+         return NULL;
+     }
+ 
+Only in python-nss-0.16.0/src: py_nss.c~

@@ -6,7 +6,7 @@
 
 Name:           python-nss
 Version:        0.16.0
-Release:        2%{?dist}
+Release:        3%{?dist}
 Summary:        Python bindings for Network Security Services (NSS)
 
 Group:          Development/Languages
@@ -16,6 +16,10 @@ Source0:        ftp://ftp.mozilla.org/pub/mozilla.org/security/python-nss/releas
 BuildRoot:      %{_tmppath}/%{name}-%{version}-%{release}-root-%(%{__id_u} -n)
 
 Patch1: nss-version.patch
+Patch2: python-nss-file-like-read.patch
+Patch3: python-nss-test-fips.patch
+Patch4: python-nss-set_certificate_db.patch
+Patch5: python-nss-doc-manifest.patch
 
 %global docdir %{_docdir}/%{name}-%{version}
 
@@ -26,7 +30,7 @@ Patch1: nss-version.patch
 }
 
 BuildRequires: python-devel
-BuildRequires: python-setuptools-devel
+BuildRequires: python-setuptools
 BuildRequires: python-docutils
 BuildRequires: nspr-devel
 BuildRequires: nss-devel
@@ -53,6 +57,10 @@ API documentation and examples
 %prep
 %setup -q
 %patch1 -p1 -b .nss-version
+%patch2 -p1 -b .file-like
+%patch3 -p1 -b .fips-test
+%patch4 -p1 -b .set_certificate_db
+%patch5 -p1 -b .doc-manifest
 
 %build
 CFLAGS="$RPM_OPT_FLAGS -fno-strict-aliasing" %{__python} setup.py build
@@ -94,6 +102,14 @@ rm -rf $RPM_BUILD_ROOT
 %endif
 
 %changelog
+* Tue May 26 2015 John Dennis <jdennis@redhat.com> - 0.16.0-3
+- Resolves: #1225212
+  Reads from file like objects actually only worked for file objects
+- Resolves: #1179573
+  python-nss-doc package is missing the run_tests script
+- Resolves: #1194349
+  test_pkcs12.py does not works in FIPS mode 
+
 * Tue Nov 25 2014 John Dennis <jdennis@redhat.com> - 0.16.0-2
 - Remove the TLS 1.3 symbols from ssl_version_range.py example
   because RHEL only has NSS 3.16.
